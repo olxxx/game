@@ -3,7 +3,7 @@ import { getBlockUV } from './texture.js';
 
 const TRANSPARENT_BLOCKS = new Set([4]);
 
-export function greedyMesh(blocks, chunkSize, worldHeight) {
+export function greedyMesh(blocks, chunkSize, worldHeight, getNeighborBlock) {
   const solidPositions = [];
   const solidNormals = [];
   const solidUvs = [];
@@ -19,7 +19,7 @@ export function greedyMesh(blocks, chunkSize, worldHeight) {
 
   function getBlock(x, y, z) {
     if (x < 0 || x >= chunkSize || y < 0 || y >= worldHeight || z < 0 || z >= chunkSize) {
-      return 0;
+      return getNeighborBlock ? getNeighborBlock(x, y, z) : 0;
     }
     return blocks[x + z * chunkSize + y * chunkSize * chunkSize];
   }
@@ -180,14 +180,10 @@ export function greedyMesh(blocks, chunkSize, worldHeight) {
           }
 
           const blockType = Math.abs(val);
-          const realDir = val > 0 ? 1 : -1;
+          const realDir = val > 0 ? dir : -dir;
 
           const startPos = [0, 0, 0];
-          if (realDir > 0) {
-            startPos[axis] = d + 1;
-          } else {
-            startPos[axis] = d;
-          }
+          startPos[axis] = dir > 0 ? d + 1 : d;
           startPos[u] = iu;
           startPos[v] = iv;
 

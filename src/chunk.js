@@ -127,8 +127,23 @@ export class Chunk {
     }
   }
 
-  buildMesh() {
-    const { solid, transparent } = greedyMesh(this.blocks, this.chunkSize, this.worldHeight);
+  buildMesh(allChunks) {
+    let getNeighbor = undefined;
+    if (allChunks) {
+      getNeighbor = (lx, ly, lz) => {
+        const wx = this.chunkX * this.chunkSize + lx;
+        const wz = this.chunkZ * this.chunkSize + lz;
+        const cx = Math.floor(wx / this.chunkSize);
+        const cz = Math.floor(wz / this.chunkSize);
+        const neighbor = allChunks.find(c => c.chunkX === cx && c.chunkZ === cz);
+        if (!neighbor) return 0;
+        const nlx = ((wx % this.chunkSize) + this.chunkSize) % this.chunkSize;
+        const nlz = ((wz % this.chunkSize) + this.chunkSize) % this.chunkSize;
+        if (ly < 0 || ly >= this.worldHeight) return 0;
+        return neighbor.blocks[neighbor.getIndex(nlx, ly, nlz)];
+      };
+    }
+    const { solid, transparent } = greedyMesh(this.blocks, this.chunkSize, this.worldHeight, getNeighbor);
     const { solidMaterial, waterMaterial } = getSharedMaterials();
 
     const solidMesh = new THREE.Mesh(solid, solidMaterial);

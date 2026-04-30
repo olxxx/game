@@ -46,7 +46,7 @@ export class World {
       this.scene.remove(chunk.waterMesh);
       chunk.waterMesh.geometry.dispose();
     }
-    const { solidMesh, waterMesh } = chunk.buildMesh();
+    const { solidMesh, waterMesh } = chunk.buildMesh(this.chunks);
     this.scene.add(solidMesh);
     this.scene.add(waterMesh);
   }
