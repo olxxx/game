@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { getDropId } from './items.js';
 
 export class World {
   constructor(chunks, scene) {
@@ -25,16 +26,28 @@ export class World {
   }
 
   setBlock(wx, wy, wz, blockId) {
-    if (wy < 0 || wy >= 80) return false;
+    if (wy < 0 || wy >= 80) return { success: false, dropId: 0 };
     const cx = Math.floor(wx / 16);
     const cz = Math.floor(wz / 16);
     const chunk = this.findChunk(cx, cz);
-    if (!chunk) return false;
+    if (!chunk) return { success: false, dropId: 0 };
     const lx = ((wx % 16) + 16) % 16;
     const lz = ((wz % 16) + 16) % 16;
-    chunk.blocks[lx + lz * 16 + wy * 16 * 16] = blockId;
+    const index = lx + lz * 16 + wy * 16 * 16;
+
+    const oldBlockId = chunk.blocks[index];
+
+    if (blockId === 0) {
+      const dropId = getDropId(oldBlockId);
+      chunk.blocks[index] = 0;
+      this.rebuildChunk(chunk);
+      return { success: true, dropId };
+    }
+
+    if (chunk.blocks[index] !== 0) return { success: false, dropId: 0 };
+    chunk.blocks[index] = blockId;
     this.rebuildChunk(chunk);
-    return true;
+    return { success: true, dropId: 0 };
   }
 
   rebuildChunk(chunk) {
@@ -92,6 +105,55 @@ export class World {
       prevX = bx;
       prevY = by;
       prevZ = bz;
+    }
+
+    return null;
+  }
+
+  waterRaycast(camera, maxDist) {
+    const raycaster = new THREE.Raycaster();
+    raycaster.far = maxDist;
+    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+
+    const dir = raycaster.ray.direction.clone().normalize();
+    const origin = raycaster.ray.origin.clone();
+
+    const step = 0.05;
+    const pos = origin.clone();
+    let prevBlock = 0;
+    let waterPos = null;
+
+    for (let t = 0; t < maxDist; t += step) {
+      pos.copy(origin).addScaledVector(dir, t);
+
+      const bx = Math.floor(pos.x);
+      const by = Math.floor(pos.y);
+      const bz = Math.floor(pos.z);
+      const curBlock = this.getBlock(bx, by, bz);
+
+      if (curBlock !== prevBlock) {
+        if (curBlock === 4 && prevBlock !== 4) {
+          waterPos = new THREE.Vector3(bx, by, bz);
+        }
+        if (curBlock !== 4 && prevBlock === 4 && waterPos) {
+          return {
+            blockPos: waterPos,
+            placePos: waterPos.clone(),
+            normal: new THREE.Vector3(0, 1, 0),
+            blockId: 4,
+          };
+        }
+        prevBlock = curBlock;
+      }
+    }
+
+    if (waterPos && prevBlock === 4) {
+      return {
+        blockPos: waterPos,
+        placePos: waterPos.clone(),
+        normal: new THREE.Vector3(0, 1, 0),
+        blockId: 4,
+      };
     }
 
     return null;

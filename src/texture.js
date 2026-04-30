@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 const TILE = 16;
-const COLS = 6;
+const COLS = 8;
 const ROWS = 3;
 
 export const FACE_TOP = 0;
@@ -74,6 +74,18 @@ export function createTextureAtlas() {
     return [clamp(r + d - 20), clamp(g + d + 10), clamp(b + d - 20)];
   }
 
+  function noiseCobblestone(x, y, r, g, b) {
+    const d = (Math.random() - 0.5) * 50;
+    const crack = (x % 5 < 1 || y % 4 < 1) ? -20 : 0;
+    return [clamp(130 + d + crack), clamp(130 + d + crack), clamp(130 + d + crack)];
+  }
+
+  function noisePlanks(x, y, r, g, b) {
+    const stripe = (y % 4 < 1) ? -15 : 5;
+    const d = (Math.random() - 0.5) * 15;
+    return [clamp(180 + d + stripe), clamp(140 + d + stripe), clamp(90 + d + stripe)];
+  }
+
   drawTile(0, 0, 90, 170, 60, noiseGrassTop);
   drawTile(1, 0, 76, 153, 50, noiseGrassSide);
   drawTile(2, 0, 90, 170, 60, noiseGrassTop);
@@ -103,6 +115,14 @@ export function createTextureAtlas() {
   drawTile(0, 1, 60, 120, 40, noiseLeaves);
   drawTile(0, 2, 60, 120, 40, noiseLeaves);
 
+  drawTile(6, 0, 130, 130, 130, noiseCobblestone);
+  drawTile(6, 1, 130, 130, 130, noiseCobblestone);
+  drawTile(6, 2, 130, 130, 130, noiseCobblestone);
+
+  drawTile(7, 0, 180, 140, 90, noisePlanks);
+  drawTile(7, 1, 180, 140, 90, noisePlanks);
+  drawTile(7, 2, 180, 140, 90, noisePlanks);
+
   const texture = new THREE.CanvasTexture(canvas);
   texture.magFilter = THREE.NearestFilter;
   texture.minFilter = THREE.NearestFilter;
@@ -119,9 +139,12 @@ const BLOCK_FACES = {
   1: { top: [0, 0], side: [1, 0], bottom: [2, 0] },
   2: { top: [0, 1], side: [1, 1], bottom: [2, 1] },
   3: { top: [0, 2], side: [1, 2], bottom: [2, 2] },
+  4: { top: [4, 0], side: [4, 1], bottom: [4, 2] },
   5: { top: [3, 0], side: [3, 1], bottom: [3, 2] },
   6: { top: [5, 0], side: [5, 1], bottom: [5, 2] },
   7: { top: [0, 1], side: [0, 1], bottom: [0, 2] },
+  8: { top: [6, 0], side: [6, 1], bottom: [6, 2] },
+  9: { top: [7, 0], side: [7, 1], bottom: [7, 2] },
 };
 
 export function getBlockUV(blockType, faceAxis, dir) {

@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { Chunk } from './chunk.js';
 import { Player } from './player.js';
 import { World } from './world.js';
+import { Inventory } from './inventory.js';
+import { ParticleSystem } from './particles.js';
+import { isTool, isBlock, getMineTime } from './items.js';
 
 class Game {
   constructor() {
@@ -49,6 +52,21 @@ class Game {
     this.world = new World(this.chunks, this.scene);
     this.player = new Player(0, 70, 10);
 
+    this.particles = new ParticleSystem(this.scene);
+
+    this.inventory = new Inventory();
+    this.inventory.setDefaultLoadout();
+    this.inventory.onChange = () => this.updateHotbarUI();
+
+    this.mining = {
+      active: false,
+      target: null,
+      targetBlockId: 0,
+      progress: 0,
+      mineTime: 0,
+      particleColor: 0x808080,
+    };
+
     const hlGeo = new THREE.BoxGeometry(1.01, 1.01, 1.01);
     const edges = new THREE.EdgesGeometry(hlGeo);
     this.highlight = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({
@@ -61,10 +79,6 @@ class Game {
     this.highlight.renderOrder = 999;
     this.highlight.visible = false;
     this.scene.add(this.highlight);
-
-    const crosshair = document.createElement('div');
-    crosshair.className = 'crosshair';
-    document.body.appendChild(crosshair);
 
     this.renderer.domElement.addEventListener('click', () => {
       this.renderer.domElement.requestPointerLock();
@@ -87,12 +101,32 @@ class Game {
       if (!hit) return;
 
       if (e.button === 0) {
-        this.world.setBlock(hit.blockPos.x, hit.blockPos.y, hit.blockPos.z, 0);
+        this.startMining(hit);
       } else if (e.button === 2) {
-        const p = hit.placePos;
-        if (!this.world.getBlock(p.x, p.y, p.z)) {
-          this.world.setBlock(p.x, p.y, p.z, 1);
+        const selectedItemId = this.inventory.getSelectedItemId();
+        if (isBlock(selectedItemId)) {
+          const waterHit = this.world.waterRaycast(this.camera, 8);
+          if (waterHit) {
+            const result = this.world.setBlock(waterHit.placePos.x, waterHit.placePos.y, waterHit.placePos.z, selectedItemId);
+            if (result.success) {
+              this.inventory.removeSelected();
+            }
+          } else {
+            const p = hit.placePos;
+            if (!this.world.getBlock(p.x, p.y, p.z)) {
+              const result = this.world.setBlock(p.x, p.y, p.z, selectedItemId);
+              if (result.success) {
+                this.inventory.removeSelected();
+              }
+            }
+          }
         }
+      }
+    });
+
+    document.addEventListener('mouseup', (e) => {
+      if (e.button === 0) {
+        this.stopMining();
       }
     });
 
@@ -100,6 +134,12 @@ class Game {
 
     document.addEventListener('keydown', (e) => {
       this.keys[e.code] = true;
+      if (e.code.startsWith('Digit')) {
+        const num = parseInt(e.code.replace('Digit', ''));
+        if (num >= 1 && num <= 9) {
+          this.inventory.selectByNumber(num);
+        }
+      }
     });
 
     document.addEventListener('keyup', (e) => {
@@ -109,6 +149,7 @@ class Game {
     window.addEventListener('resize', this.onWindowResize.bind(this));
 
     this.animate();
+    this.updateHotbarUI();
   }
 
   onWindowResize() {
@@ -152,12 +193,22 @@ class Game {
   }
 
   updateHighlight() {
-    const hit = this.world.raycast(this.camera, 8);
-    if (hit) {
+    let highlightPos = null;
+
+    if (this.mining.active && this.mining.target) {
+      highlightPos = this.mining.target;
+    } else {
+      const hit = this.world.raycast(this.camera, 8);
+      if (hit) {
+        highlightPos = hit.blockPos;
+      }
+    }
+
+    if (highlightPos) {
       this.highlight.position.set(
-        hit.blockPos.x + 0.5,
-        hit.blockPos.y + 0.5,
-        hit.blockPos.z + 0.5
+        highlightPos.x + 0.5,
+        highlightPos.y + 0.5,
+        highlightPos.z + 0.5
       );
       this.highlight.visible = true;
     } else {
@@ -180,9 +231,234 @@ class Game {
     const euler = new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ');
     this.camera.quaternion.setFromEuler(euler);
 
+    this.updateMining(dt);
     this.updateHighlight();
 
+    this.particles.update(dt);
+
     this.renderer.render(this.scene, this.camera);
+  }
+
+  startMining(hit) {
+    const bp = hit.blockPos;
+    const blockId = this.world.getBlock(bp.x, bp.y, bp.z);
+    if (blockId === 0 || blockId === 4) return;
+
+    this.mining.active = true;
+    this.mining.target = bp.clone();
+    this.mining.targetBlockId = blockId;
+    this.mining.progress = 0;
+
+    const selectedItemId = this.inventory.getSelectedItemId();
+    this.mining.mineTime = getMineTime(blockId, isTool(selectedItemId) ? selectedItemId : 0);
+
+    this.mining.particleColor = this.getBlockColor(blockId);
+  }
+
+  stopMining() {
+    this.mining.active = false;
+    this.mining.target = null;
+    this.mining.progress = 0;
+  }
+
+  getBlockColor(blockId) {
+    const colors = {
+      1: 0x5a8c3c,
+      2: 0x866043,
+      3: 0x808080,
+      5: 0xd2c8a0,
+      6: 0x64460a,
+      7: 0x3c7a28,
+      8: 0x828282,
+      9: 0xb48c5a,
+    };
+    return colors[blockId] || 0x808080;
+  }
+
+  updateMining(dt) {
+    if (!this.mining.active || !this.mining.target) return;
+
+    const bp = this.mining.target;
+    const currentBlock = this.world.getBlock(bp.x, bp.y, bp.z);
+    if (currentBlock !== this.mining.targetBlockId) {
+      this.stopMining();
+      return;
+    }
+
+    const camDir = new THREE.Vector3();
+    this.camera.getWorldDirection(camDir);
+    const blockCenter = new THREE.Vector3(bp.x + 0.5, bp.y + 0.5, bp.z + 0.5);
+    const toBlock = blockCenter.clone().sub(this.camera.position).normalize();
+    if (camDir.dot(toBlock) < 0.5) {
+      this.stopMining();
+      return;
+    }
+
+    this.mining.progress += dt;
+
+    this.particles.emitContinuous(
+      new THREE.Vector3(bp.x + 0.5, bp.y + 1, bp.z + 0.5),
+      this.mining.particleColor
+    );
+
+    if (this.mining.progress >= this.mining.mineTime) {
+      const result = this.world.setBlock(bp.x, bp.y, bp.z, 0);
+      if (result.success && result.dropId > 0) {
+        this.inventory.add(result.dropId, 1);
+      }
+      this.particles.emit(
+        new THREE.Vector3(bp.x + 0.5, bp.y + 0.5, bp.z + 0.5),
+        this.mining.particleColor,
+        15
+      );
+      this.stopMining();
+    }
+  }
+
+  drawBlockIcon(blockId) {
+    const c = document.createElement('canvas');
+    c.width = 32; c.height = 32;
+    const ctx = c.getContext('2d');
+    const colors = {
+      1: ['#5a8c3c', '#4a7a30', '#866043', '#705030'],
+      2: ['#866043', '#705030', '#604020', '#503010'],
+      3: ['#808080', '#686868', '#909090', '#585858'],
+      4: ['#3264c8', '#4080e0', '#2850b0', '#50a0f0'],
+      5: ['#d2c8a0', '#c0b890', '#b0a070', '#e0d8b0'],
+      6: ['#64460a', '#503010', '#704a10', '#402000'],
+      7: ['#3c7a28', '#2c6a18', '#4c8a38', '#1c5a08'],
+      8: ['#828282', '#6a6a6a', '#989898', '#525252'],
+      9: ['#b48c5a', '#a07040', '#c8a070', '#8c6030'],
+    };
+    const c1 = colors[blockId] || ['#808080', '#686868', '#909090', '#585858'];
+    for (let py = 0; py < 32; py++) {
+      for (let pxx = 0; pxx < 32; pxx++) {
+        const hash = Math.sin(pxx * 12.9898 + py * 78.233) * 43758.5453;
+        const r = hash - Math.floor(hash);
+        ctx.fillStyle = r < 0.25 ? c1[0] : r < 0.5 ? c1[1] : r < 0.75 ? c1[2] : c1[3];
+        ctx.fillRect(pxx, py, 1, 1);
+      }
+    }
+    if (blockId === 1) {
+      for (let pxx = 0; pxx < 32; pxx++) {
+        const hash = Math.sin(pxx * 45.678) * 12345.6789;
+        const h = 6 + Math.floor((hash - Math.floor(hash)) * 4);
+        for (let py = 0; py < h; py++) {
+          ctx.fillStyle = '#5a8c3c';
+          ctx.fillRect(pxx, py, 1, 1);
+        }
+      }
+    }
+    return c;
+  }
+
+  drawPickaxe() {
+    const c = document.createElement('canvas');
+    c.width = 32; c.height = 32;
+    const ctx = c.getContext('2d');
+    const brown = '#8B4513';
+    const silver = '#D0D0D0';
+    const grey = '#A0A0A0';
+    ctx.fillStyle = brown;
+    ctx.fillRect(4, 26, 4, 4);
+    ctx.fillRect(8, 22, 4, 4);
+    ctx.fillRect(12, 18, 4, 4);
+    ctx.fillRect(16, 14, 4, 4);
+    ctx.fillStyle = silver;
+    ctx.fillRect(18, 8, 12, 4);
+    ctx.fillRect(18, 12, 12, 4);
+    ctx.fillStyle = grey;
+    ctx.fillRect(18, 6, 12, 2);
+    ctx.fillRect(18, 14, 12, 2);
+    ctx.fillRect(28, 6, 2, 10);
+    return c;
+  }
+
+  drawAxe() {
+    const c = document.createElement('canvas');
+    c.width = 32; c.height = 32;
+    const ctx = c.getContext('2d');
+    const brown = '#8B4513';
+    const silver = '#B0B0B0';
+    const grey = '#808080';
+    ctx.fillStyle = brown;
+    ctx.fillRect(6, 24, 4, 6);
+    ctx.fillRect(6, 18, 4, 6);
+    ctx.fillRect(6, 12, 4, 6);
+    ctx.fillRect(6, 6, 4, 6);
+    ctx.fillStyle = silver;
+    ctx.fillRect(10, 4, 8, 8);
+    ctx.fillRect(18, 2, 8, 8);
+    ctx.fillStyle = grey;
+    ctx.fillRect(10, 2, 16, 2);
+    ctx.fillRect(10, 12, 16, 2);
+    ctx.fillRect(26, 2, 2, 12);
+    return c;
+  }
+
+  drawShovel() {
+    const c = document.createElement('canvas');
+    c.width = 32; c.height = 32;
+    const ctx = c.getContext('2d');
+    const brown = '#8B4513';
+    const silver = '#D0D0D0';
+    const grey = '#A0A0A0';
+    ctx.fillStyle = brown;
+    ctx.fillRect(13, 24, 6, 6);
+    ctx.fillRect(13, 18, 6, 6);
+    ctx.fillRect(13, 14, 6, 4);
+    ctx.fillStyle = silver;
+    ctx.fillRect(8, 4, 16, 10);
+    ctx.fillStyle = grey;
+    ctx.fillRect(8, 2, 16, 2);
+    ctx.fillRect(8, 14, 16, 2);
+    ctx.fillRect(6, 4, 2, 10);
+    ctx.fillRect(24, 4, 2, 10);
+    return c;
+  }
+
+  drawToolIcon(toolId) {
+    if (toolId === 10) return this.drawPickaxe();
+    if (toolId === 11) return this.drawAxe();
+    if (toolId === 12) return this.drawShovel();
+    return null;
+  }
+
+  updateHotbarUI() {
+    const slots = document.querySelectorAll('.hotbar-slot');
+    slots.forEach((slot, i) => {
+      const data = this.inventory.slots[i];
+      const icon = slot.querySelector('.item-icon');
+      const count = slot.querySelector('.item-count');
+
+      if (data.itemId !== 0) {
+        if (icon) {
+          const existing = icon.querySelector('canvas');
+          if (existing) existing.remove();
+
+          let canvas;
+          if (isTool(data.itemId)) {
+            canvas = this.drawToolIcon(data.itemId);
+          } else {
+            canvas = this.drawBlockIcon(data.itemId);
+          }
+          if (canvas) icon.appendChild(canvas);
+          icon.style.background = 'transparent';
+        }
+        if (count) {
+          count.textContent = data.count > 1 ? data.count : '';
+        }
+      } else {
+        if (icon) {
+          const existing = icon.querySelector('canvas');
+          if (existing) existing.remove();
+          icon.style.background = 'transparent';
+        }
+        if (count) count.textContent = '';
+      }
+
+      slot.classList.toggle('active', i === this.inventory.selectedIndex);
+    });
   }
 }
 
