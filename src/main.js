@@ -30,12 +30,13 @@ class Game {
 
     // Chunks
     this.chunks = [];
-    for (let x = -2; x <= 2; x++) {
-      for (let z = -2; z <= 2; z++) {
+    for (let x = -3; x <= 3; x++) {
+      for (let z = -3; z <= 3; z++) {
         const chunk = new Chunk(x, z);
         chunk.generateTerrain();
-        const mesh = chunk.buildMesh();
-        this.scene.add(mesh);
+        const { solidMesh, waterMesh } = chunk.buildMesh();
+        this.scene.add(solidMesh);
+        this.scene.add(waterMesh);
         this.chunks.push(chunk);
       }
     }
