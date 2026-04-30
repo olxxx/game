@@ -1,23 +1,17 @@
 import * as THREE from 'three';
-
-const BLOCK_COLORS = {
-  1: [0.3, 0.69, 0.31],
-  2: [0.55, 0.27, 0.07],
-  3: [0.5, 0.5, 0.5],
-  4: [0.13, 0.59, 0.95],
-  5: [0.96, 0.89, 0.69],
-};
+import { getBlockUV } from './texture.js';
 
 const TRANSPARENT_BLOCKS = new Set([4]);
 
 export function greedyMesh(blocks, chunkSize, worldHeight) {
   const solidPositions = [];
   const solidNormals = [];
-  const solidColors = [];
+  const solidUvs = [];
   const solidIndices = [];
 
   const transPositions = [];
   const transNormals = [];
+  const transUvs = [];
   const transColors = [];
   const transIndices = [];
 
@@ -31,20 +25,19 @@ export function greedyMesh(blocks, chunkSize, worldHeight) {
   }
 
   function addQuad(target, axis, dir, x, y, z, w, h, blockType) {
-    const { positions, normals, colors, indices } = target;
-    const color = BLOCK_COLORS[blockType];
+    const { positions, normals, uvs, indices } = target;
     const vi = positions.length / 3;
     const n = [0, 0, 0];
     n[axis] = dir;
 
-    const u = (axis + 1) % 3;
-    const v = (axis + 2) % 3;
+    const ua = (axis + 1) % 3;
+    const va = (axis + 2) % 3;
 
     const p = [x, y, z];
     const du = [0, 0, 0];
     const dv = [0, 0, 0];
-    du[u] = w;
-    dv[v] = h;
+    du[ua] = w;
+    dv[va] = h;
 
     const c0 = [p[0], p[1], p[2]];
     const c1 = [p[0] + du[0], p[1] + du[1], p[2] + du[2]];
@@ -54,8 +47,52 @@ export function greedyMesh(blocks, chunkSize, worldHeight) {
     for (const c of [c0, c1, c2, c3]) {
       positions.push(c[0], c[1], c[2]);
       normals.push(n[0], n[1], n[2]);
-      colors.push(color[0], color[1], color[2]);
     }
+
+    const uv = getBlockUV(blockType, axis, dir);
+    uvs.push(uv.u0, uv.v0);
+    uvs.push(uv.u1, uv.v0);
+    uvs.push(uv.u1, uv.v1);
+    uvs.push(uv.u0, uv.v1);
+
+    if (dir > 0) {
+      indices.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3);
+    } else {
+      indices.push(vi, vi + 2, vi + 1, vi, vi + 3, vi + 2);
+    }
+  }
+
+  function addTransQuad(target, axis, dir, x, y, z, w, h, blockType) {
+    const { positions, normals, uvs, colors, indices } = target;
+    const vi = positions.length / 3;
+    const n = [0, 0, 0];
+    n[axis] = dir;
+
+    const ua = (axis + 1) % 3;
+    const va = (axis + 2) % 3;
+
+    const p = [x, y, z];
+    const du = [0, 0, 0];
+    const dv = [0, 0, 0];
+    du[ua] = w;
+    dv[va] = h;
+
+    const c0 = [p[0], p[1], p[2]];
+    const c1 = [p[0] + du[0], p[1] + du[1], p[2] + du[2]];
+    const c2 = [p[0] + du[0] + dv[0], p[1] + du[1] + dv[1], p[2] + du[2] + dv[2]];
+    const c3 = [p[0] + dv[0], p[1] + dv[1], p[2] + dv[2]];
+
+    for (const c of [c0, c1, c2, c3]) {
+      positions.push(c[0], c[1], c[2]);
+      normals.push(n[0], n[1], n[2]);
+      colors.push(0.2, 0.5, 0.9);
+    }
+
+    const uv = getBlockUV(blockType, axis, dir);
+    uvs.push(uv.u0, uv.v0);
+    uvs.push(uv.u1, uv.v0);
+    uvs.push(uv.u1, uv.v1);
+    uvs.push(uv.u0, uv.v1);
 
     if (dir > 0) {
       indices.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3);
@@ -154,11 +191,17 @@ export function greedyMesh(blocks, chunkSize, worldHeight) {
           startPos[u] = iu;
           startPos[v] = iv;
 
-          const target = TRANSPARENT_BLOCKS.has(blockType)
-            ? { positions: transPositions, normals: transNormals, colors: transColors, indices: transIndices }
-            : { positions: solidPositions, normals: solidNormals, colors: solidColors, indices: solidIndices };
-
-          addQuad(target, axis, realDir, startPos[0], startPos[1], startPos[2], w, h, blockType);
+          if (TRANSPARENT_BLOCKS.has(blockType)) {
+            addTransQuad(
+              { positions: transPositions, normals: transNormals, uvs: transUvs, colors: transColors, indices: transIndices },
+              axis, realDir, startPos[0], startPos[1], startPos[2], w, h, blockType
+            );
+          } else {
+            addQuad(
+              { positions: solidPositions, normals: solidNormals, uvs: solidUvs, indices: solidIndices },
+              axis, realDir, startPos[0], startPos[1], startPos[2], w, h, blockType
+            );
+          }
 
           iu += w;
           idx += w;
@@ -170,12 +213,13 @@ export function greedyMesh(blocks, chunkSize, worldHeight) {
   const solid = new THREE.BufferGeometry();
   solid.setAttribute('position', new THREE.Float32BufferAttribute(solidPositions, 3));
   solid.setAttribute('normal', new THREE.Float32BufferAttribute(solidNormals, 3));
-  solid.setAttribute('color', new THREE.Float32BufferAttribute(solidColors, 3));
+  solid.setAttribute('uv', new THREE.Float32BufferAttribute(solidUvs, 2));
   solid.setIndex(solidIndices);
 
   const transparent = new THREE.BufferGeometry();
   transparent.setAttribute('position', new THREE.Float32BufferAttribute(transPositions, 3));
   transparent.setAttribute('normal', new THREE.Float32BufferAttribute(transNormals, 3));
+  transparent.setAttribute('uv', new THREE.Float32BufferAttribute(transUvs, 2));
   transparent.setAttribute('color', new THREE.Float32BufferAttribute(transColors, 3));
   transparent.setIndex(transIndices);
 
