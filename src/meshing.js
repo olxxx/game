@@ -46,14 +46,12 @@ export function greedyMesh(blocks, chunkSize, worldHeight) {
     du[u] = w;
     dv[v] = h;
 
-    const corners = [
-      [p[0], p[1], p[2]],
-      [p[0] + du[0], p[1] + du[1], p[2] + du[2]],
-      [p[0] + du[0] + dv[0], p[1] + du[1] + dv[1], p[2] + du[2] + dv[2]],
-      [p[0] + dv[0], p[1] + dv[1], p[2] + dv[2]],
-    ];
+    const c0 = [p[0], p[1], p[2]];
+    const c1 = [p[0] + du[0], p[1] + du[1], p[2] + du[2]];
+    const c2 = [p[0] + du[0] + dv[0], p[1] + du[1] + dv[1], p[2] + du[2] + dv[2]];
+    const c3 = [p[0] + dv[0], p[1] + dv[1], p[2] + dv[2]];
 
-    for (const c of corners) {
+    for (const c of [c0, c1, c2, c3]) {
       positions.push(c[0], c[1], c[2]);
       normals.push(n[0], n[1], n[2]);
       colors.push(color[0], color[1], color[2]);
