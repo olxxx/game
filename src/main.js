@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Chunk } from './chunk.js';
 import { Player } from './player.js';
+import { World } from './world.js';
 
 class Game {
   constructor() {
@@ -17,7 +18,7 @@ class Game {
     this.scene.background = new THREE.Color(0x87CEEB);
     this.scene.fog = new THREE.Fog(0x87CEEB, 80, 160);
 
-    this.camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 300);
+    this.camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 300);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -42,7 +43,25 @@ class Game {
       }
     }
 
+    this.world = new World(this.chunks, this.scene);
     this.player = new Player(0, 70, 10);
+
+    const hlGeo = new THREE.BoxGeometry(1.01, 1.01, 1.01);
+    const edges = new THREE.EdgesGeometry(hlGeo);
+    this.highlight = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({
+      color: 0xffffff,
+      linewidth: 2,
+      transparent: true,
+      opacity: 0.9,
+      depthTest: false,
+    }));
+    this.highlight.renderOrder = 999;
+    this.highlight.visible = false;
+    this.scene.add(this.highlight);
+
+    const crosshair = document.createElement('div');
+    crosshair.className = 'crosshair';
+    document.body.appendChild(crosshair);
 
     this.renderer.domElement.addEventListener('click', () => {
       this.renderer.domElement.requestPointerLock();
@@ -58,6 +77,23 @@ class Game {
       this.pitch -= e.movementY * 0.002;
       this.pitch = Math.max(-Math.PI / 2 * 0.99, Math.min(Math.PI / 2 * 0.99, this.pitch));
     });
+
+    document.addEventListener('mousedown', (e) => {
+      if (!this.isLocked) return;
+      const hit = this.world.raycast(this.camera, 8);
+      if (!hit) return;
+
+      if (e.button === 0) {
+        this.world.setBlock(hit.blockPos.x, hit.blockPos.y, hit.blockPos.z, 0);
+      } else if (e.button === 2) {
+        const p = hit.placePos;
+        if (!this.world.getBlock(p.x, p.y, p.z)) {
+          this.world.setBlock(p.x, p.y, p.z, 1);
+        }
+      }
+    });
+
+    document.addEventListener('contextmenu', (e) => e.preventDefault());
 
     document.addEventListener('keydown', (e) => {
       this.keys[e.code] = true;
@@ -112,6 +148,20 @@ class Game {
     }
   }
 
+  updateHighlight() {
+    const hit = this.world.raycast(this.camera, 8);
+    if (hit) {
+      this.highlight.position.set(
+        hit.blockPos.x + 0.5,
+        hit.blockPos.y + 0.5,
+        hit.blockPos.z + 0.5
+      );
+      this.highlight.visible = true;
+    } else {
+      this.highlight.visible = false;
+    }
+  }
+
   animate() {
     requestAnimationFrame(this.animate.bind(this));
 
@@ -126,6 +176,8 @@ class Game {
 
     const euler = new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ');
     this.camera.quaternion.setFromEuler(euler);
+
+    this.updateHighlight();
 
     this.renderer.render(this.scene, this.camera);
   }

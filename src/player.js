@@ -16,30 +16,31 @@ export class Player {
   }
 
   update(dt, chunks) {
-    this.velocity.y += this.gravity * dt;
+    if (!this.onGround) {
+      this.velocity.y += this.gravity * dt;
+    }
 
-    const moveX = this.velocity.x * dt;
-    const moveY = this.velocity.y * dt;
-    const moveZ = this.velocity.z * dt;
+    this.position.x += this.velocity.x * dt;
+    this.resolveAxis(chunks, 'x');
 
-    this.position.x += moveX;
-    this.resolveCollisionX(chunks);
+    this.position.y += this.velocity.y * dt;
+    this.resolveAxis(chunks, 'y');
 
-    this.position.y += moveY;
-    this.resolveCollisionY(chunks);
+    this.position.z += this.velocity.z * dt;
+    this.resolveAxis(chunks, 'z');
 
-    this.position.z += moveZ;
-    this.resolveCollisionZ(chunks);
+    if (this.position.y < -20) {
+      this.position.set(0, 80, 10);
+      this.velocity.set(0, 0, 0);
+    }
 
     return new THREE.Vector3(this.position.x, this.position.y + 1.6, this.position.z);
   }
 
   getBlock(chunks, wx, wy, wz) {
     if (wy < 0 || wy >= 80) return 0;
-
     const cx = Math.floor(wx / 16);
     const cz = Math.floor(wz / 16);
-
     for (const chunk of chunks) {
       if (chunk.chunkX === cx && chunk.chunkZ === cz) {
         const lx = ((wx % 16) + 16) % 16;
@@ -51,68 +52,80 @@ export class Player {
   }
 
   isSolid(chunks, wx, wy, wz) {
-    const block = this.getBlock(chunks, wx, wy, wz);
-    return SOLID_BLOCKS.has(block);
+    return SOLID_BLOCKS.has(this.getBlock(chunks, wx, wy, wz));
   }
 
-  collidesWithWorld(chunks) {
+  resolveAxis(chunks, axis) {
     const hw = this.width / 2;
     const hd = this.depth / 2;
 
-    const minX = Math.floor(this.position.x - hw + 0.001);
-    const maxX = Math.floor(this.position.x + hw - 0.001);
-    const minY = Math.floor(this.position.y + 0.001);
-    const maxY = Math.floor(this.position.y + this.height - 0.001);
-    const minZ = Math.floor(this.position.z - hd + 0.001);
-    const maxZ = Math.floor(this.position.z + hd - 0.001);
+    const minBX = Math.floor(this.position.x - hw);
+    const maxBX = Math.floor(this.position.x + hw);
+    const minBY = Math.floor(this.position.y);
+    const maxBY = Math.floor(this.position.y + this.height);
+    const minBZ = Math.floor(this.position.z - hd);
+    const maxBZ = Math.floor(this.position.z + hd);
 
-    for (let y = minY; y <= maxY; y++) {
-      for (let z = minZ; z <= maxZ; z++) {
-        for (let x = minX; x <= maxX; x++) {
-          if (this.isSolid(chunks, x, y, z)) {
-            return true;
+    for (let by = minBY; by <= maxBY; by++) {
+      for (let bz = minBZ; bz <= maxBZ; bz++) {
+        for (let bx = minBX; bx <= maxBX; bx++) {
+          if (!this.isSolid(chunks, bx, by, bz)) continue;
+
+          const overlapX = this.position.x + hw > bx && this.position.x - hw < bx + 1;
+          const overlapY = this.position.y + this.height > by && this.position.y < by + 1;
+          const overlapZ = this.position.z + hd > bz && this.position.z - hd < bz + 1;
+
+          if (!overlapX || !overlapY || !overlapZ) continue;
+
+          if (axis === 'x') {
+            const penLeft = (this.position.x + hw) - bx;
+            const penRight = (bx + 1) - (this.position.x - hw);
+            if (penLeft < penRight) {
+              this.position.x = bx - hw;
+            } else {
+              this.position.x = bx + 1 + hw;
+            }
+            this.velocity.x = 0;
+          } else if (axis === 'y') {
+            const penDown = (this.position.y + this.height) - by;
+            const penUp = (by + 1) - this.position.y;
+            if (penDown < penUp) {
+              this.position.y = by - this.height;
+            } else {
+              this.position.y = by + 1;
+              this.onGround = true;
+            }
+            this.velocity.y = 0;
+          } else if (axis === 'z') {
+            const penFront = (this.position.z + hd) - bz;
+            const penBack = (bz + 1) - (this.position.z - hd);
+            if (penFront < penBack) {
+              this.position.z = bz - hd;
+            } else {
+              this.position.z = bz + 1 + hd;
+            }
+            this.velocity.z = 0;
           }
         }
       }
     }
-    return false;
-  }
 
-  resolveCollisionX(chunks) {
-    if (!this.collidesWithWorld(chunks)) return;
-
-    const hw = this.width / 2;
-    if (this.velocity.x > 0) {
-      this.position.x = Math.floor(this.position.x + hw) - hw - 0.001;
-    } else if (this.velocity.x < 0) {
-      this.position.x = Math.floor(this.position.x - hw) + 1 + hw + 0.001;
+    if (axis === 'y') {
+      const minBX2 = Math.floor(this.position.x - hw);
+      const maxBX2 = Math.floor(this.position.x + hw);
+      const minBZ2 = Math.floor(this.position.z - hd);
+      const maxBZ2 = Math.floor(this.position.z + hd);
+      const checkY = Math.floor(this.position.y - 0.01);
+      let grounded = false;
+      for (let bz = minBZ2; bz <= maxBZ2 && !grounded; bz++) {
+        for (let bx = minBX2; bx <= maxBX2 && !grounded; bx++) {
+          if (this.isSolid(chunks, bx, checkY, bz)) {
+            grounded = true;
+          }
+        }
+      }
+      if (!grounded) this.onGround = false;
     }
-    this.velocity.x = 0;
-  }
-
-  resolveCollisionY(chunks) {
-    this.onGround = false;
-    if (!this.collidesWithWorld(chunks)) return;
-
-    if (this.velocity.y < 0) {
-      this.position.y = Math.floor(this.position.y) + 1 + 0.001;
-      this.onGround = true;
-    } else if (this.velocity.y > 0) {
-      this.position.y = Math.ceil(this.position.y + this.height) - this.height - 0.001;
-    }
-    this.velocity.y = 0;
-  }
-
-  resolveCollisionZ(chunks) {
-    if (!this.collidesWithWorld(chunks)) return;
-
-    const hd = this.depth / 2;
-    if (this.velocity.z > 0) {
-      this.position.z = Math.floor(this.position.z + hd) - hd - 0.001;
-    } else if (this.velocity.z < 0) {
-      this.position.z = Math.floor(this.position.z - hd) + 1 + hd + 0.001;
-    }
-    this.velocity.z = 0;
   }
 
   jump() {
