@@ -98,9 +98,9 @@ class Game {
     document.addEventListener('mousedown', (e) => {
       if (!this.isLocked) return;
       const hit = this.world.raycast(this.camera, 8);
-      if (!hit) return;
 
       if (e.button === 0) {
+        if (!hit) return;
         this.startMining(hit);
       } else if (e.button === 2) {
         const selectedItemId = this.inventory.getSelectedItemId();
@@ -111,7 +111,7 @@ class Game {
             if (result.success) {
               this.inventory.removeSelected();
             }
-          } else {
+          } else if (hit) {
             const p = hit.placePos;
             if (!this.world.getBlock(p.x, p.y, p.z)) {
               const result = this.world.setBlock(p.x, p.y, p.z, selectedItemId);

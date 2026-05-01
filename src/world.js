@@ -39,12 +39,13 @@ export class World {
 
     if (blockId === 0) {
       const dropId = getDropId(oldBlockId);
-      chunk.blocks[index] = 0;
+      chunk.blocks[index] = this.isNearWater(wx, wy, wz) ? 4 : 0;
+      this.handleSandFall(wx, wy + 1, wz);
       this.rebuildChunk(chunk);
       return { success: true, dropId };
     }
 
-    if (chunk.blocks[index] !== 0) return { success: false, dropId: 0 };
+    if (chunk.blocks[index] !== 0 && chunk.blocks[index] !== 4) return { success: false, dropId: 0 };
     chunk.blocks[index] = blockId;
     this.rebuildChunk(chunk);
     return { success: true, dropId: 0 };
@@ -131,10 +132,11 @@ export class World {
       const bz = Math.floor(pos.z);
       const curBlock = this.getBlock(bx, by, bz);
 
+      if (curBlock === 4) {
+        waterPos = new THREE.Vector3(bx, by, bz);
+      }
+
       if (curBlock !== prevBlock) {
-        if (curBlock === 4 && prevBlock !== 4) {
-          waterPos = new THREE.Vector3(bx, by, bz);
-        }
         if (curBlock !== 4 && prevBlock === 4 && waterPos) {
           return {
             blockPos: waterPos,
@@ -157,5 +159,80 @@ export class World {
     }
 
     return null;
+  }
+
+  isNearWater(wx, wy, wz, maxRadius = 4) {
+    const visited = new Set();
+    const queue = [{ x: wx, y: wy, z: wz, dist: 0 }];
+    let head = 0;
+    visited.add(`${wx},${wy},${wz}`);
+
+    const dirs = [
+      [1, 0, 0], [-1, 0, 0],
+      [0, 1, 0], [0, -1, 0],
+      [0, 0, 1], [0, 0, -1],
+    ];
+
+    while (head < queue.length) {
+      const { x, y, z, dist } = queue[head++];
+      if (dist > maxRadius) continue;
+
+      for (const [dx, dy, dz] of dirs) {
+        const nx = x + dx;
+        const ny = y + dy;
+        const nz = z + dz;
+        const key = `${nx},${ny},${nz}`;
+
+        if (visited.has(key)) continue;
+        if (ny < 0 || ny >= 80) continue;
+        visited.add(key);
+
+        const block = this.getBlock(nx, ny, nz);
+        if (block === 4) return true;
+        if (block === 0) {
+          queue.push({ x: nx, y: ny, z: nz, dist: dist + 1 });
+        }
+      }
+    }
+    return false;
+  }
+
+  handleSandFall(wx, wy, wz) {
+    let y = wy;
+    const sandBlocks = [];
+
+    while (y < 80) {
+      const block = this.getBlock(wx, y, wz);
+      if (block === 5) {
+        sandBlocks.push(y);
+        y++;
+      } else {
+        break;
+      }
+    }
+
+    if (sandBlocks.length === 0) return;
+
+    const cx = Math.floor(wx / 16);
+    const cz = Math.floor(wz / 16);
+    const chunk = this.findChunk(cx, cz);
+    if (!chunk) return;
+
+    const lx = ((wx % 16) + 16) % 16;
+    const lz = ((wz % 16) + 16) % 16;
+    const baseIndex = lx + lz * 16;
+
+    for (let i = 0; i < sandBlocks.length; i++) {
+      const fromY = sandBlocks[i];
+      const toY = fromY - 1;
+
+      if (toY < 0) break;
+      if (chunk.blocks[baseIndex + toY * 256] !== 0) break;
+
+      chunk.blocks[baseIndex + fromY * 256] = 0;
+      chunk.blocks[baseIndex + toY * 256] = 5;
+    }
+
+    this.rebuildChunk(chunk);
   }
 }

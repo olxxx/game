@@ -16,13 +16,22 @@ export class Player {
   }
 
   update(dt, chunks) {
-    if (!this.onGround) {
-      this.velocity.y += this.gravity * dt;
+    const inWater = this.isInWater(chunks);
+    this.inWater = inWater;
+
+    if (inWater) {
+      this.velocity.y *= 0.95;
     }
 
-    this.position.x += this.velocity.x * dt;
+    if (!this.onGround) {
+      const gravity = inWater ? this.gravity * 0.2 : this.gravity;
+      this.velocity.y += gravity * dt;
+    }
+
+    const speedMult = inWater ? 0.5 : 1.0;
+    this.position.x += this.velocity.x * dt * speedMult;
     this.position.y += this.velocity.y * dt;
-    this.position.z += this.velocity.z * dt;
+    this.position.z += this.velocity.z * dt * speedMult;
 
     for (let iter = 0; iter < 8; iter++) {
       const collision = this.findCollision(chunks);
@@ -151,6 +160,17 @@ export class Player {
     if (this.onGround) {
       this.velocity.y = this.jumpSpeed;
       this.onGround = false;
+    } else if (this.inWater) {
+      this.velocity.y = this.jumpSpeed * 0.6;
     }
+  }
+
+  isInWater(chunks) {
+    const block = this.getBlock(chunks,
+      Math.floor(this.position.x),
+      Math.floor(this.position.y + 0.9),
+      Math.floor(this.position.z)
+    );
+    return block === 4;
   }
 }
