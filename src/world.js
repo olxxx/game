@@ -39,7 +39,12 @@ export class World {
 
     if (blockId === 0) {
       const dropId = getDropId(oldBlockId);
-      chunk.blocks[index] = this.isNearWater(wx, wy, wz) ? 4 : 0;
+      if (this.hasAdjacentWater(wx, wy, wz)) {
+        chunk.blocks[index] = 4;
+        this.spreadWater(wx, wy, wz, chunk);
+      } else {
+        chunk.blocks[index] = 0;
+      }
       this.handleSandFall(wx, wy + 1, wz);
       this.rebuildChunk(chunk);
       return { success: true, dropId };
@@ -161,40 +166,92 @@ export class World {
     return null;
   }
 
-  isNearWater(wx, wy, wz, maxRadius = 4) {
+  hasAdjacentWater(wx, wy, wz) {
+    const dirs = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+    for (const [dx, dy, dz] of dirs) {
+      if (this.getBlock(wx + dx, wy + dy, wz + dz) === 4) return true;
+    }
+    return false;
+  }
+
+  spreadWater(wx, wy, wz, sourceChunk) {
+    const MAX_LEVEL = 7;
     const visited = new Set();
-    const queue = [{ x: wx, y: wy, z: wz, dist: 0 }];
-    let head = 0;
-    visited.add(`${wx},${wy},${wz}`);
+    const results = new Map();
 
-    const dirs = [
-      [1, 0, 0], [-1, 0, 0],
-      [0, 1, 0], [0, -1, 0],
-      [0, 0, 1], [0, 0, -1],
-    ];
+    const startKey = `${wx},${wy},${wz}`;
+    visited.add(startKey);
+    const queue = [{ x: wx, y: wy, z: wz, level: 1 }];
 
-    while (head < queue.length) {
-      const { x, y, z, dist } = queue[head++];
-      if (dist > maxRadius) continue;
+    while (queue.length > 0) {
+      const { x, y, z, level } = queue.shift();
 
-      for (const [dx, dy, dz] of dirs) {
-        const nx = x + dx;
-        const ny = y + dy;
-        const nz = z + dz;
-        const key = `${nx},${ny},${nz}`;
+      // 重力优先：向下
+      if (y > 0) {
+        const belowKey = `${x},${y-1},${z}`;
+        if (!visited.has(belowKey)) {
+          visited.add(belowKey);
+          const below = this.getBlock(x, y-1, z);
+          if (below === 0) {
+            results.set(belowKey, level);
+            queue.unshift({ x, y: y-1, z, level });
+          }
+        }
+      }
 
-        if (visited.has(key)) continue;
-        if (ny < 0 || ny >= 80) continue;
-        visited.add(key);
+      // 水平扩散（等级递减）
+      if (level < MAX_LEVEL) {
+        const horiz = [[1,0,0],[-1,0,0],[0,0,1],[0,0,-1]];
+        for (const [dx, dy, dz] of horiz) {
+          const nx = x+dx, nz = z+dz;
+          const key = `${nx},${y},${nz}`;
+          if (visited.has(key)) continue;
+          visited.add(key);
+          const block = this.getBlock(nx, y, nz);
+          if (block === 0) {
+            results.set(key, level + 1);
+            queue.push({ x: nx, y, z: nz, level: level + 1 });
+          }
+        }
+      }
 
-        const block = this.getBlock(nx, ny, nz);
-        if (block === 4) return true;
-        if (block === 0) {
-          queue.push({ x: nx, y: ny, z: nz, dist: dist + 1 });
+      // 向上填充（需要四面都是水）
+      if (y < 79 && level < MAX_LEVEL) {
+        const aboveKey = `${x},${y+1},${z}`;
+        if (!visited.has(aboveKey) && this.getBlock(x, y+1, z) === 0) {
+          const hDirs = [[1,0,0],[-1,0,0],[0,0,1],[0,0,-1]];
+          const allWater = hDirs.every(([dx,,dz]) => {
+            const nbBlock = this.getBlock(x+dx, y+1, z+dz);
+            return nbBlock === 4 || results.has(`${x+dx},${y+1},${z+dz}`);
+          });
+          if (allWater) {
+            visited.add(aboveKey);
+            results.set(aboveKey, level + 1);
+            queue.push({ x, y: y+1, z, level: level + 1 });
+          }
         }
       }
     }
-    return false;
+
+    // 批量写入
+    const affectedChunks = new Set();
+    for (const [key] of results) {
+      const [sx, sy, sz] = key.split(',').map(Number);
+      if (sy < 0 || sy >= 80) continue;
+      const cx = Math.floor(sx / 16);
+      const cz = Math.floor(sz / 16);
+      const chunk = this.findChunk(cx, cz);
+      if (!chunk) continue;
+      const lx = ((sx % 16) + 16) % 16;
+      const lz = ((sz % 16) + 16) % 16;
+      chunk.blocks[lx + lz * 16 + sy * 16 * 16] = 4;
+      affectedChunks.add(chunk);
+    }
+
+    affectedChunks.add(sourceChunk);
+    for (const c of affectedChunks) {
+      this.rebuildChunk(c);
+    }
   }
 
   handleSandFall(wx, wy, wz) {
