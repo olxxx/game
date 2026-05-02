@@ -15,8 +15,8 @@ export class Player {
     this.onGround = false;
   }
 
-  update(dt, chunks) {
-    const inWater = this.isInWater(chunks);
+  update(dt, world) {
+    const inWater = this.isInWater(world);
     this.inWater = inWater;
 
     if (inWater) {
@@ -34,12 +34,12 @@ export class Player {
     this.position.z += this.velocity.z * dt * speedMult;
 
     for (let iter = 0; iter < 8; iter++) {
-      const collision = this.findCollision(chunks);
+      const collision = this.findCollision(world);
       if (!collision) break;
       this.resolve(collision);
     }
 
-    this.checkGround(chunks);
+    this.checkGround(world);
 
     if (this.position.y < -20) {
       this.position.set(0, 80, 10);
@@ -49,25 +49,11 @@ export class Player {
     return new THREE.Vector3(this.position.x, this.position.y + 1.6, this.position.z);
   }
 
-  getBlock(chunks, wx, wy, wz) {
-    if (wy < 0 || wy >= 80) return 0;
-    const cx = Math.floor(wx / 16);
-    const cz = Math.floor(wz / 16);
-    for (const chunk of chunks) {
-      if (chunk.chunkX === cx && chunk.chunkZ === cz) {
-        const lx = ((wx % 16) + 16) % 16;
-        const lz = ((wz % 16) + 16) % 16;
-        return chunk.blocks[lx + lz * 16 + wy * 16 * 16];
-      }
-    }
-    return 0;
+  isSolid(world, wx, wy, wz) {
+    return SOLID_BLOCKS.has(world.getBlock(wx, wy, wz));
   }
 
-  isSolid(chunks, wx, wy, wz) {
-    return SOLID_BLOCKS.has(this.getBlock(chunks, wx, wy, wz));
-  }
-
-  findCollision(chunks) {
+  findCollision(world) {
     const hw = this.width / 2;
     const hd = this.depth / 2;
     const px = this.position.x;
@@ -88,7 +74,7 @@ export class Player {
     for (let by = minY; by <= maxY; by++) {
       for (let bz = minZ; bz <= maxZ; bz++) {
         for (let bx = minX; bx <= maxX; bx++) {
-          if (!this.isSolid(chunks, bx, by, bz)) continue;
+          if (!this.isSolid(world, bx, by, bz)) continue;
 
           const overlapX = px + hw > bx && px - hw < bx + 1;
           const overlapY = py + this.height > by && py < by + 1;
@@ -135,7 +121,7 @@ export class Player {
     }
   }
 
-  checkGround(chunks) {
+  checkGround(world) {
     const hw = this.width / 2;
     const hd = this.depth / 2;
     const checkY = Math.floor(this.position.y - 0.01);
@@ -149,7 +135,7 @@ export class Player {
     this.onGround = false;
     for (let z = minZ; z <= maxZ && !this.onGround; z++) {
       for (let x = minX; x <= maxX && !this.onGround; x++) {
-        if (this.isSolid(chunks, x, checkY, z)) {
+        if (this.isSolid(world, x, checkY, z)) {
           this.onGround = true;
         }
       }
@@ -165,8 +151,8 @@ export class Player {
     }
   }
 
-  isInWater(chunks) {
-    const block = this.getBlock(chunks,
+  isInWater(world) {
+    const block = world.getBlock(
       Math.floor(this.position.x),
       Math.floor(this.position.y + 0.9),
       Math.floor(this.position.z)

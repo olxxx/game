@@ -13,6 +13,8 @@ class Game {
     this.pitch = 0;
     this.isLocked = false;
     this.lastTime = performance.now();
+    this.lastPlayerChunkX = null;
+    this.lastPlayerChunkZ = null;
     this.init();
   }
 
@@ -34,22 +36,25 @@ class Game {
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
     this.scene.add(ambientLight);
 
-    this.chunks = [];
+    const chunks = [];
     for (let x = -3; x <= 3; x++) {
       for (let z = -3; z <= 3; z++) {
         const chunk = new Chunk(x, z);
         chunk.generateTerrain();
-        this.chunks.push(chunk);
+        chunks.push(chunk);
       }
     }
 
-    for (const chunk of this.chunks) {
-      const { solidMesh, waterMesh } = chunk.buildMesh(this.chunks);
+    this.world = new World(chunks, this.scene);
+
+    for (const chunk of chunks) {
+      const { solidMesh, waterMesh } = chunk.buildMesh(this.world.chunkMap);
       this.scene.add(solidMesh);
       this.scene.add(waterMesh);
     }
 
-    this.world = new World(this.chunks, this.scene);
+    this.lastPlayerChunkX = Math.floor(0 / 16);
+    this.lastPlayerChunkZ = Math.floor(10 / 16);
     this.player = new Player(0, 70, 10);
 
     this.particles = new ParticleSystem(this.scene);
@@ -67,7 +72,7 @@ class Game {
       particleColor: 0x808080,
     };
 
-    const hlGeo = new THREE.BoxGeometry(1.01, 1.01, 1.01);
+    const hlGeo = new THREE.PlaneGeometry(1, 1);
     const edges = new THREE.EdgesGeometry(hlGeo);
     this.highlight = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({
       color: 0xffffff,
@@ -193,23 +198,23 @@ class Game {
   }
 
   updateHighlight() {
-    let highlightPos = null;
+    const hit = this.world.raycast(this.camera, 8);
 
-    if (this.mining.active && this.mining.target) {
-      highlightPos = this.mining.target;
-    } else {
-      const hit = this.world.raycast(this.camera, 8);
-      if (hit) {
-        highlightPos = hit.blockPos;
-      }
-    }
-
-    if (highlightPos) {
+    if (hit) {
       this.highlight.position.set(
-        highlightPos.x + 0.5,
-        highlightPos.y + 0.5,
-        highlightPos.z + 0.5
+        hit.blockPos.x + 0.5 + hit.normal.x * 0.505,
+        hit.blockPos.y + 0.5 + hit.normal.y * 0.505,
+        hit.blockPos.z + 0.5 + hit.normal.z * 0.505
       );
+
+      if (hit.normal.x !== 0) {
+        this.highlight.rotation.set(0, Math.PI / 2, 0);
+      } else if (hit.normal.y !== 0) {
+        this.highlight.rotation.set(Math.PI / 2, 0, 0);
+      } else {
+        this.highlight.rotation.set(0, 0, 0);
+      }
+
       this.highlight.visible = true;
     } else {
       this.highlight.visible = false;
@@ -225,8 +230,20 @@ class Game {
 
     this.updatePlayer();
 
-    const eyePos = this.player.update(dt, this.chunks);
+    const eyePos = this.player.update(dt, this.world);
     this.camera.position.copy(eyePos);
+
+    const pcx = Math.floor(this.player.position.x / 16);
+    const pcz = Math.floor(this.player.position.z / 16);
+
+    if (pcx !== this.lastPlayerChunkX || pcz !== this.lastPlayerChunkZ) {
+      this.world.loadChunksAroundPlayer(
+        this.player.position.x,
+        this.player.position.z
+      );
+      this.lastPlayerChunkX = pcx;
+      this.lastPlayerChunkZ = pcz;
+    }
 
     const euler = new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ');
     this.camera.quaternion.setFromEuler(euler);

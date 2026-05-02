@@ -1,17 +1,44 @@
 import * as THREE from 'three';
+import { Chunk } from './chunk.js';
 import { getDropId } from './items.js';
 
 export class World {
   constructor(chunks, scene) {
-    this.chunks = chunks;
+    this.chunkMap = new Map();
     this.scene = scene;
+
+    for (const chunk of chunks) {
+      const key = `${chunk.chunkX},${chunk.chunkZ}`;
+      this.chunkMap.set(key, chunk);
+    }
   }
 
   findChunk(cx, cz) {
-    for (const chunk of this.chunks) {
-      if (chunk.chunkX === cx && chunk.chunkZ === cz) return chunk;
+    return this.chunkMap.get(`${cx},${cz}`) || null;
+  }
+
+  loadChunksAroundPlayer(playerX, playerZ) {
+    const pcx = Math.floor(playerX / 16);
+    const pcz = Math.floor(playerZ / 16);
+    const radius = 2;
+
+    for (let dx = -radius; dx <= radius; dx++) {
+      for (let dz = -radius; dz <= radius; dz++) {
+        const cx = pcx + dx;
+        const cz = pcz + dz;
+        const key = `${cx},${cz}`;
+
+        if (!this.chunkMap.has(key)) {
+          const chunk = new Chunk(cx, cz);
+          chunk.generateTerrain();
+          this.chunkMap.set(key, chunk);
+
+          const { solidMesh, waterMesh } = chunk.buildMesh(this.chunkMap);
+          this.scene.add(solidMesh);
+          this.scene.add(waterMesh);
+        }
+      }
     }
-    return null;
   }
 
   getBlock(wx, wy, wz) {
@@ -65,7 +92,7 @@ export class World {
       this.scene.remove(chunk.waterMesh);
       chunk.waterMesh.geometry.dispose();
     }
-    const { solidMesh, waterMesh } = chunk.buildMesh(this.chunks);
+    const { solidMesh, waterMesh } = chunk.buildMesh(this.chunkMap);
     this.scene.add(solidMesh);
     this.scene.add(waterMesh);
   }

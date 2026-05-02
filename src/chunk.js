@@ -3,7 +3,8 @@ import { createNoise2D } from 'simplex-noise';
 import { greedyMesh } from './meshing.js';
 import { createTextureAtlas } from './texture.js';
 
-const noise2D = createNoise2D();
+const worldSeed = Math.random();
+const noise2D = createNoise2D(() => worldSeed);
 
 let sharedTexture = null;
 let sharedSolidMaterial = null;
@@ -41,8 +42,11 @@ export class Chunk {
   }
 
   getHeight(wx, wz) {
-    const scale = 0.01;
-    const n = noise2D(wx * scale, wz * scale);
+    const base = noise2D(wx * 0.01, wz * 0.01);
+    const detail = noise2D(wx * 0.05, wz * 0.05) * 0.5;
+    const mountain = noise2D(wx * 0.005, wz * 0.005) * 2;
+
+    const n = (base + detail + mountain) / 3.5;
     return Math.floor(30 + (n + 1) * 0.5 * 45);
   }
 
@@ -127,15 +131,15 @@ export class Chunk {
     }
   }
 
-  buildMesh(allChunks) {
+  buildMesh(chunkMap) {
     let getNeighbor = undefined;
-    if (allChunks) {
+    if (chunkMap) {
       getNeighbor = (lx, ly, lz) => {
         const wx = this.chunkX * this.chunkSize + lx;
         const wz = this.chunkZ * this.chunkSize + lz;
         const cx = Math.floor(wx / this.chunkSize);
         const cz = Math.floor(wz / this.chunkSize);
-        const neighbor = allChunks.find(c => c.chunkX === cx && c.chunkZ === cz);
+        const neighbor = chunkMap.get(`${cx},${cz}`);
         if (!neighbor) return 0;
         const nlx = ((wx % this.chunkSize) + this.chunkSize) % this.chunkSize;
         const nlz = ((wz % this.chunkSize) + this.chunkSize) % this.chunkSize;
