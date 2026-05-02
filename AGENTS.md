@@ -2,55 +2,111 @@
 
 ## Overview
 
-Minecraft-style voxel game. Three.js + Vite + vanilla JS (ES modules). No TypeScript, no tests, no lint, no framework.
+Minecraft-style voxel game built with Three.js + Vite + vanilla JS (ES modules). No TypeScript, no tests, no lint, no framework.
 
 ## Commands
 
 - `npm run dev` — start dev server (Vite)
 - `npm run build` — production build to `dist/`
 - `npm run preview` — preview production build
-- There are **no** test, lint, typecheck, or format commands
+- No test, lint, typecheck, or format commands
+
+## Project Structure
+
+```
+index.html          — Entry HTML (UI shell, links src/main.js)
+style.css           — Full-bleed layout, crosshair, hotbar styling
+vite.config.js      — Minimal Vite config (root='.', publicDir='public')
+src/
+  main.js           — Game class: loop, input, scene, mining/placement, hotbar UI
+  chunk.js          — Chunk class: terrain generation, mesh building
+  world.js          — World class: chunk registry, block ops, raycast, water/sand
+  meshing.js        — Greedy meshing: voxel data → BufferGeometry
+  player.js         — Player class: AABB physics, collision, water buoyancy
+  items.js          — Block/tool definitions, mining speed, drop tables
+  inventory.js      — Inventory class: 9 slots, 64-stack, hotbar management
+  texture.js        — Procedural canvas texture atlas
+  particles.js      — Mining particle effects
+```
 
 ## Architecture
 
-Single-page game. Entry: `index.html` → `src/main.js` (`Game` class).
+Single-page game. `index.html` → `src/main.js` (`Game` class) drives everything.
 
-| File | Role |
+| File | Responsibility |
 |---|---|
-| `src/main.js` | Game loop, input, Three.js scene setup, mining/placement logic, hotbar UI |
-| `src/chunk.js` | `Chunk` class — 16×16 columns, 80 blocks tall. Terrain gen via simplex noise (seeded, multi-layer), tree placement |
-| `src/world.js` | `World` class — chunk registry (Map), block get/set, raycasting, water spread (BFS), sand gravity, dynamic chunk loading |
-| `src/meshing.js` | Greedy meshing: voxel data → Three.js `BufferGeometry`. Separate solid/transparent passes |
-| `src/player.js` | `Player` class — AABB physics, collision resolution (8 iterations), water buoyancy |
-| `src/items.js` | Block/tool definitions as numeric IDs. Mining speed, drop tables, tool effectiveness |
-| `src/inventory.js` | `Inventory` class — 9 slots, 64-stack, default loadout, onChange callback |
-| `src/texture.js` | Procedural canvas texture atlas (8×3 tiles, 16px each). `getBlockUV()` maps block ID + face → UV |
-| `src/particles.js` | Mining particle effects (tiny cubes with lifetime) |
+| `src/main.js` | Game loop (`animate`), pointer lock input, Three.js scene/camera/renderer setup, mining state machine, block placement, hotbar UI rendering, dynamic chunk loading trigger |
+| `src/chunk.js` | `Chunk` class — 16×16 columns, 80 blocks tall. Multi-octave simplex noise terrain (3 frequencies: 0.01/0.05/0.005), biome split (height<40 → desert/sand, ≥40 → grass/dirt/stone), tree generation (2% chance, height≥45 only, chunk-local) |
+| `src/world.js` | `World` class — `Map<string, Chunk>` keyed by `"cx,cz"`. Block get/set with negative coord handling, step-based raycast (step=0.05), BFS water spread (MAX_LEVEL=7), sand gravity (single-block), dynamic 5×5 chunk loading |
+| `src/meshing.js` | `greedyMesh()` — standard greedy algorithm, returns `{ solid, transparent }` BufferGeometry. `TRANSPARENT_BLOCKS = Set([4])` (water only). Solid/transparent rendered as separate meshes |
+| `src/player.js` | `Player` class — AABB (0.6×1.8×0.6), gravity=-20, jumpSpeed=8, speed=6. 8-iteration collision resolution. Water buoyancy (damped velocity, 0.2x gravity, 0.5x speed). Void respawn at y<-20 → (0,80,10). Eye height offset=1.6 |
+| `src/items.js` | `ITEMS` array indexed by numeric ID. `ITEM_MAP` for O(1) lookup. Exports: `getItem`, `isTool`, `isBlock`, `getMineTime`, `getDropId`. BARE_HAND_SPEED=0.3 |
+| `src/inventory.js` | `Inventory` — 9 slots × 64 stack. Default loadout: pickaxe, axe, shovel, grass×64, cobblestone×64, planks×64. `onChange` callback for UI sync |
+| `src/texture.js` | Procedural canvas atlas: 8 cols × 3 rows, 16px tiles (128×48 total). `getBlockUV(blockId, faceAxis, dir)` → UV coords. NearestFilter for pixel art look |
+| `src/particles.js` | `ParticleSystem` — tiny 0.08 cubes, 0.6s lifetime, gravity=-10. `emit()` for bursts, `emitContinuous()` for mining (30% chance/frame) |
 
-## Block ID registry (hardcoded everywhere)
+## Block/Tool ID Registry
 
-Blocks: 1=Grass, 2=Dirt, 3=Stone, 4=Water, 5=Sand, 6=Log, 7=Leaves, 8=Cobblestone, 9=Planks
-Tools: 10=Pickaxe, 11=Axe, 12=Shovel
+| ID | Name | Type | Hardness | Drops | Effective Tool |
+|---|---|---|---|---|---|
+| 0 | Air | — | — | — | — |
+| 1 | Grass | block | 0.6 | 1 (self) | Shovel |
+| 2 | Dirt | block | 0.5 | 2 (self) | Shovel |
+| 3 | Stone | block | 1.5 | 8 (Cobblestone) | Pickaxe |
+| 4 | Water | block | ∞ | — (unbreakable) | — |
+| 5 | Sand | block | 0.5 | 5 (self) | Shovel |
+| 6 | Log | block | 2.0 | 9 (Planks) | Axe |
+| 7 | Leaves | block | 0.2 | 0 (nothing) | — |
+| 8 | Cobblestone | block | 2.0 | 8 (self) | Pickaxe |
+| 9 | Planks | block | 2.0 | 9 (self) | Axe |
+| 10 | Pickaxe | tool | — | — | speed=4.0, effective: [3,8] |
+| 11 | Axe | tool | — | — | speed=3.0, effective: [6,9] |
+| 12 | Shovel | tool | — | — | speed=3.0, effective: [1,2,5] |
 
-When adding a new block or tool: update `ITEMS` in `items.js`, add colors in `main.js` (`getBlockColor`, `drawBlockIcon`), add texture tiles in `texture.js` (`drawTile` + `BLOCK_FACES`), and update `SOLID_BLOCKS` in `player.js` if it's solid.
+Adding a new block/tool requires changes in:
+1. `items.js` — add to `ITEMS` array
+2. `texture.js` — add tile drawing in `drawTile()`, add entry in `BLOCK_FACES`
+3. `main.js` — add color in `getBlockColor()` and `drawBlockIcon()`
+4. `player.js` — add to `SOLID_BLOCKS` if solid
 
-## Key constants / gotchas
+## Key Constants
 
-- Chunk size is 16×16, world height is 80 (hardcoded in `Chunk` constructor defaults and `World.getBlock`)
-- World generates 7×7 chunks initially (−3 to +3 on X and Z), then dynamically loads 5×5 chunks around player as they move
-- Each game session has a random seed (`Math.random()` in `chunk.js`) — terrain is unique per session but not reproducible
-- Chunks are stored in a `Map<string, Chunk>` keyed by `"cx,cz"` — use `World.findChunk(cx, cz)` for O(1) lookup
-- Textures are procedurally generated on canvas at startup, not loaded from files
-- `TRANSPARENT_BLOCKS` in `meshing.js` is `Set([4])` — only water is transparent
-- `SOLID_BLOCKS` in `player.js` is `Set([1,2,3,5,6,7,8,9])` — water (4) is not solid for collision
-- Shared materials are lazily created module-level singletons in `chunk.js` (`getSharedMaterials()`)
-- Raycast uses step-based marching (step=0.05), not Three.js Raycaster on meshes
-- Mining progress resets if you look away (dot product < 0.5 check)
-- The UI text in `index.html` is Chinese (controls hint)
+| Constant | Value | Location |
+|---|---|---|
+| Chunk size | 16×16 | `chunk.js` constructor, `world.js` getBlock/setBlock |
+| World height | 80 | `chunk.js` constructor, `world.js` getBlock (hardcoded `>= 80`) |
+| Initial chunks | 7×7 (−3 to +3) | `main.js` init |
+| Dynamic load radius | 2 (5×5 area) | `world.js` loadChunksAroundPlayer |
+| Player start | (0, 70, 10) | `main.js` init |
+| Void respawn | y < -20 → (0, 80, 10) | `player.js` update |
+| Raycast step | 0.05 | `world.js` raycast/waterRaycast |
+| Raycast max dist | 8 | `main.js` (passed to raycast) |
+| Mining cancel dot | 0.5 | `main.js` updateMining |
+| Mouse sensitivity | 0.002 | `main.js` mousemove |
+| Pitch clamp | ±(π/2 × 0.99) | `main.js` mousemove |
+| Camera FOV | 70 | `main.js` init |
+| Fog range | 100–200 | `main.js` init |
+| Max dt cap | 0.05s | `main.js` animate |
+| Water opacity | 0.6 | `chunk.js` getSharedMaterials |
+| Water spread MAX_LEVEL | 7 | `world.js` spreadWater |
+| Terrain height range | ~30–75 | `chunk.js` getHeight |
+| Tree threshold | height ≥ 45, ~2% chance | `chunk.js` generateTrees |
+| Tree trunk height | 4 | `chunk.js` placeTile |
+| Tile size | 16px | `texture.js` TILE |
+| Atlas | 8 cols × 3 rows (128×48px) | `texture.js` |
+| Max stack | 64 | `inventory.js` |
+| Hotbar slots | 9 | `inventory.js` |
+| Particle lifetime | 0.6s | `particles.js` |
+| Particle size | 0.08 | `particles.js` |
 
 ## Conventions
 
 - Pure ES modules (`"type": "module"` in package.json), no CommonJS
-- No class inheritance — all classes are standalone
-- Three.js objects are created inline, not imported from shared utils
-- Block colors are duplicated across `main.js` functions (`getBlockColor`, `drawBlockIcon`) — keep them in sync
+- No class inheritance — all classes standalone
+- Three.js objects created inline, not from shared utils
+- Block colors duplicated in `getBlockColor()` and `drawBlockIcon()` — keep in sync
+- Chunks keyed by `"cx,cz"` string — use `World.findChunk(cx, cz)` for O(1) lookup
+- Textures are procedural canvas, not loaded files
+- Shared materials are lazy-init module-level singletons in `chunk.js`
+- Seed is `Math.random()` per session — terrain not reproducible
+- UI text in `index.html` is Chinese (controls hint)
