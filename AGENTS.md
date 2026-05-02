@@ -18,8 +18,8 @@ Single-page game. Entry: `index.html` → `src/main.js` (`Game` class).
 | File | Role |
 |---|---|
 | `src/main.js` | Game loop, input, Three.js scene setup, mining/placement logic, hotbar UI |
-| `src/chunk.js` | `Chunk` class — 16×16 columns, 80 blocks tall. Terrain gen via simplex noise, tree placement |
-| `src/world.js` | `World` class — chunk registry, block get/set, raycasting, water spread (BFS), sand gravity |
+| `src/chunk.js` | `Chunk` class — 16×16 columns, 80 blocks tall. Terrain gen via simplex noise (seeded, multi-layer), tree placement |
+| `src/world.js` | `World` class — chunk registry (Map), block get/set, raycasting, water spread (BFS), sand gravity, dynamic chunk loading |
 | `src/meshing.js` | Greedy meshing: voxel data → Three.js `BufferGeometry`. Separate solid/transparent passes |
 | `src/player.js` | `Player` class — AABB physics, collision resolution (8 iterations), water buoyancy |
 | `src/items.js` | Block/tool definitions as numeric IDs. Mining speed, drop tables, tool effectiveness |
@@ -37,7 +37,9 @@ When adding a new block or tool: update `ITEMS` in `items.js`, add colors in `ma
 ## Key constants / gotchas
 
 - Chunk size is 16×16, world height is 80 (hardcoded in `Chunk` constructor defaults and `World.getBlock`)
-- World generates 7×7 chunks (−3 to +3 on X and Z) — change loop in `main.js` `init()`
+- World generates 7×7 chunks initially (−3 to +3 on X and Z), then dynamically loads 5×5 chunks around player as they move
+- Each game session has a random seed (`Math.random()` in `chunk.js`) — terrain is unique per session but not reproducible
+- Chunks are stored in a `Map<string, Chunk>` keyed by `"cx,cz"` — use `World.findChunk(cx, cz)` for O(1) lookup
 - Textures are procedurally generated on canvas at startup, not loaded from files
 - `TRANSPARENT_BLOCKS` in `meshing.js` is `Set([4])` — only water is transparent
 - `SOLID_BLOCKS` in `player.js` is `Set([1,2,3,5,6,7,8,9])` — water (4) is not solid for collision
