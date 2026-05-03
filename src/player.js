@@ -14,111 +14,84 @@ export class Player {
     this.speed = 6;
     this.onGround = false;
 
-    this.waterAccel = 18;
+    // Water physics
+    this.inWater = false;
+    this.waterAccel = 15;
     this.waterMaxSpeed = 4;
-    this.waterDrag = 6;
-    this.waterVerticalAccel = 14;
+    this.waterDrag = 4;
+    this.waterVerticalAccel = 12;
     this.waterMaxVerticalSpeed = 3;
-    this.waterVerticalDrag = 6;
-    this.waterSurfaceJumpSpeed = 6.5;
-    this.surfaceSnap = 0.2;
+    this.waterVerticalDrag = 3;
+    this.waterSurfaceJumpSpeed = 7;
+    this.surfaceSnap = 0.5;
+
+    // Surface jump state tracking
+    this.surfaceJumping = false;
+    this.surfaceJumpTimer = 0;
+    this.surfaceJumpDuration = 0.15; // seconds of reduced drag after jump
+  }
+
+  isInWater(world) {
+    const px = Math.floor(this.position.x);
+    const pz = Math.floor(this.position.z);
+
+    // Check at feet, mid, and head heights
+    const feetY = Math.floor(this.position.y + 0.2);
+    const midY = Math.floor(this.position.y + 0.9);
+    const headY = Math.floor(this.position.y + this.height - 0.1);
+
+    const feetBlock = world.getBlock(px, feetY, pz);
+    const midBlock = world.getBlock(px, midY, pz);
+    const headBlock = world.getBlock(px, headY, pz);
+
+    // In water if any of these points is water
+    return feetBlock === 4 || midBlock === 4 || headBlock === 4;
   }
 
   isNearWaterSurface(world) {
-    const footY = this.position.y + 0.1;
-    const headY = this.position.y + this.height;
+    const px = Math.floor(this.position.x);
+    const pz = Math.floor(this.position.z);
+    const py = this.position.y;
 
-    const footBlock = world.getBlock(
-      Math.floor(this.position.x),
-      Math.floor(footY),
-      Math.floor(this.position.z)
-    );
+    // Check if player's upper body is near water surface
+    // Look for water at feet/mid and air above
+    for (let checkY = Math.floor(py); checkY <= Math.floor(py + 1.5); checkY++) {
+      const block = world.getBlock(px, checkY, pz);
+      const above = world.getBlock(px, checkY + 1, pz);
 
-    if (footBlock !== 4) return false;
-
-    const headBlock = world.getBlock(
-      Math.floor(this.position.x),
-      Math.floor(headY),
-      Math.floor(this.position.z)
-    );
-
-    if (headBlock !== 0) return false;
-
-    const waterSurfaceY = Math.floor(footY) + 1;
-    return (waterSurfaceY - footY) <= this.surfaceSnap;
-  }
-
-  update(dt, world, input = {}) {
-    const inWater = this.isInWater(world);
-    this.inWater = inWater;
-
-    if (inWater) {
-      let dirX = input.moveDir?.x || 0;
-      let dirZ = input.moveDir?.z || 0;
-      const lenSq = dirX * dirX + dirZ * dirZ;
-      if (lenSq > 1e-6) {
-        const invLen = 1 / Math.sqrt(lenSq);
-        dirX *= invLen;
-        dirZ *= invLen;
-        this.velocity.x += dirX * this.waterAccel * dt;
-        this.velocity.z += dirZ * this.waterAccel * dt;
-      }
-
-      const nearSurface = this.isNearWaterSurface(world);
-      const shouldSurfaceJump = !!input.spaceJustPressed && !!input.spacePressed && nearSurface;
-
-      if (shouldSurfaceJump) {
-        this.velocity.y = Math.max(this.velocity.y, this.waterSurfaceJumpSpeed);
-      }
-
-      if (!shouldSurfaceJump) {
-        const verticalInput = (input.spacePressed ? 1 : 0) + (input.ctrlPressed ? -1 : 0);
-        if (verticalInput !== 0) {
-          this.velocity.y += verticalInput * this.waterVerticalAccel * dt;
-        }
-      }
-
-      this.velocity.x -= this.velocity.x * this.waterDrag * dt;
-      this.velocity.z -= this.velocity.z * this.waterDrag * dt;
-      this.velocity.y -= this.velocity.y * this.waterVerticalDrag * dt;
-
-      const horizSpeed = Math.hypot(this.velocity.x, this.velocity.z);
-      if (horizSpeed > this.waterMaxSpeed) {
-        const scale = this.waterMaxSpeed / horizSpeed;
-        this.velocity.x *= scale;
-        this.velocity.z *= scale;
-      }
-
-      if (this.velocity.y > this.waterMaxVerticalSpeed) this.velocity.y = this.waterMaxVerticalSpeed;
-      if (this.velocity.y < -this.waterMaxVerticalSpeed) this.velocity.y = -this.waterMaxVerticalSpeed;
-    } else {
-      let dirX = input.moveDir?.x || 0;
-      let dirZ = input.moveDir?.z || 0;
-      const lenSq = dirX * dirX + dirZ * dirZ;
-      if (lenSq > 1e-6) {
-        const invLen = 1 / Math.sqrt(lenSq);
-        dirX *= invLen;
-        dirZ *= invLen;
-        this.velocity.x = dirX * this.speed;
-        this.velocity.z = dirZ * this.speed;
-      } else {
-        this.velocity.x = 0;
-        this.velocity.z = 0;
-      }
-
-      if (input.spacePressed) {
-        this.jump();
-      }
-
-      if (!this.onGround) {
-        this.velocity.y += this.gravity * dt;
+      // Near surface if current is water and above is not solid
+      if (block === 4 && !SOLID_BLOCKS.has(above)) {
+        return true;
       }
     }
 
+    return false;
+  }
+
+  update(dt, world, input = {}) {
+    const wasInWater = this.inWater;
+    this.inWater = this.isInWater(world);
+
+    // Update surface jump timer
+    if (this.surfaceJumping) {
+      this.surfaceJumpTimer -= dt;
+      if (this.surfaceJumpTimer <= 0 || !this.inWater) {
+        this.surfaceJumping = false;
+      }
+    }
+
+    if (this.inWater) {
+      this.updateWaterPhysics(dt, world, input);
+    } else {
+      this.updateLandPhysics(dt, world, input);
+    }
+
+    // Apply velocity
     this.position.x += this.velocity.x * dt;
     this.position.y += this.velocity.y * dt;
     this.position.z += this.velocity.z * dt;
 
+    // Collision resolution
     for (let iter = 0; iter < 8; iter++) {
       const collision = this.findCollision(world);
       if (!collision) break;
@@ -127,12 +100,101 @@ export class Player {
 
     this.checkGround(world);
 
+    // Void respawn
     if (this.position.y < -20) {
       this.position.set(0, 80, 10);
       this.velocity.set(0, 0, 0);
     }
 
     return new THREE.Vector3(this.position.x, this.position.y + 1.6, this.position.z);
+  }
+
+  updateWaterPhysics(dt, world, input) {
+    // Horizontal movement
+    let dirX = input.moveDir?.x || 0;
+    let dirZ = input.moveDir?.z || 0;
+    const lenSq = dirX * dirX + dirZ * dirZ;
+    if (lenSq > 1e-6) {
+      const invLen = 1 / Math.sqrt(lenSq);
+      dirX *= invLen;
+      dirZ *= invLen;
+      this.velocity.x += dirX * this.waterAccel * dt;
+      this.velocity.z += dirZ * this.waterAccel * dt;
+    }
+
+    // Surface jump check
+    const nearSurface = this.isNearWaterSurface(world);
+    const shouldSurfaceJump = input.spaceJustPressed && nearSurface;
+
+    if (shouldSurfaceJump && !this.surfaceJumping) {
+      this.surfaceJumping = true;
+      this.surfaceJumpTimer = this.surfaceJumpDuration;
+      this.velocity.y = this.waterSurfaceJumpSpeed;
+      // Small position boost to help clear water
+      this.position.y += 0.05;
+    }
+
+    // Vertical movement (only if not surface jumping)
+    if (!this.surfaceJumping) {
+      const verticalInput = (input.spacePressed ? 1 : 0) + (input.ctrlPressed ? -1 : 0);
+      if (verticalInput !== 0) {
+        this.velocity.y += verticalInput * this.waterVerticalAccel * dt;
+      }
+    }
+
+    // Apply drag (reduced during surface jump)
+    const dragMultiplier = this.surfaceJumping ? 0.5 : 1.0;
+    this.velocity.x -= this.velocity.x * this.waterDrag * dt * dragMultiplier;
+    this.velocity.z -= this.velocity.z * this.waterDrag * dt * dragMultiplier;
+
+    // Vertical drag - minimal during surface jump
+    if (!this.surfaceJumping) {
+      this.velocity.y -= this.velocity.y * this.waterVerticalDrag * dt;
+    } else {
+      // Only apply gravity-like effect, not full drag
+      this.velocity.y -= 2 * dt;
+    }
+
+    // Speed limits
+    const horizSpeed = Math.hypot(this.velocity.x, this.velocity.z);
+    if (horizSpeed > this.waterMaxSpeed) {
+      const scale = this.waterMaxSpeed / horizSpeed;
+      this.velocity.x *= scale;
+      this.velocity.z *= scale;
+    }
+
+    // Vertical speed limit (bypassed during surface jump)
+    if (!this.surfaceJumping) {
+      if (this.velocity.y > this.waterMaxVerticalSpeed) this.velocity.y = this.waterMaxVerticalSpeed;
+      if (this.velocity.y < -this.waterMaxVerticalSpeed) this.velocity.y = -this.waterMaxVerticalSpeed;
+    }
+  }
+
+  updateLandPhysics(dt, world, input) {
+    // Horizontal movement
+    let dirX = input.moveDir?.x || 0;
+    let dirZ = input.moveDir?.z || 0;
+    const lenSq = dirX * dirX + dirZ * dirZ;
+    if (lenSq > 1e-6) {
+      const invLen = 1 / Math.sqrt(lenSq);
+      dirX *= invLen;
+      dirZ *= invLen;
+      this.velocity.x = dirX * this.speed;
+      this.velocity.z = dirZ * this.speed;
+    } else {
+      this.velocity.x = 0;
+      this.velocity.z = 0;
+    }
+
+    // Jump
+    if (input.spacePressed) {
+      this.jump();
+    }
+
+    // Gravity
+    if (!this.onGround) {
+      this.velocity.y += this.gravity * dt;
+    }
   }
 
   isSolid(world, wx, wy, wz) {
@@ -233,14 +295,5 @@ export class Player {
       this.velocity.y = this.jumpSpeed;
       this.onGround = false;
     }
-  }
-
-  isInWater(world) {
-    const block = world.getBlock(
-      Math.floor(this.position.x),
-      Math.floor(this.position.y + 0.9),
-      Math.floor(this.position.z)
-    );
-    return block === 4;
   }
 }

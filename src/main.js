@@ -159,6 +159,10 @@ class Game {
           this.inventory.selectByNumber(num);
         }
       }
+
+      if (e.code === 'KeyH') {
+        this.toggleHelp();
+      }
     });
 
     document.addEventListener('keyup', (e) => {
@@ -167,8 +171,18 @@ class Game {
 
     window.addEventListener('resize', this.onWindowResize.bind(this));
 
+    this.helpVisible = false;
+    this.helpOverlay = document.getElementById('helpOverlay');
+
     this.animate();
     this.updateHotbarUI();
+  }
+
+  toggleHelp() {
+    this.helpVisible = !this.helpVisible;
+    if (this.helpOverlay) {
+      this.helpOverlay.classList.toggle('visible', this.helpVisible);
+    }
   }
 
   onWindowResize() {

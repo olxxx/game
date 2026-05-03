@@ -14,8 +14,8 @@ Minecraft-style voxel game built with Three.js + Vite + vanilla JS (ES modules).
 ## Project Structure
 
 ```
-index.html          — Entry HTML (UI shell, links src/main.js)
-style.css           — Full-bleed layout, crosshair, hotbar styling
+index.html          — Entry HTML (UI shell, help overlay, links src/main.js)
+style.css           — Full-bleed layout, crosshair, hotbar, help overlay styling
 vite.config.js      — Minimal Vite config (root='.', publicDir='public')
 src/
   main.js           — Game class: loop, input, scene, mining/placement, hotbar UI
@@ -35,11 +35,11 @@ Single-page game. `index.html` → `src/main.js` (`Game` class) drives everythin
 
 | File | Responsibility |
 |---|---|
-| `src/main.js` | Game loop (`animate`), pointer lock input, Three.js scene/camera/renderer setup, mining state machine, block placement, hotbar UI rendering, number-key selection, ArrowLeft/ArrowRight hotbar cycling, dynamic chunk loading trigger |
+| `src/main.js` | Game loop (`animate`), pointer lock input, Three.js scene/camera/renderer setup, mining state machine, block placement, hotbar UI rendering, number-key selection, ArrowLeft/ArrowRight hotbar cycling, dynamic chunk loading trigger, help overlay toggle (`H` key) |
 | `src/chunk.js` | `Chunk` class — 16×16 columns, 80 blocks tall. Multi-octave simplex noise terrain (3 frequencies: 0.01/0.05/0.005), biome split (height<40 → desert/sand, ≥40 → grass/dirt/stone), tree generation (2% chance, height≥45 only, chunk-local) |
 | `src/world.js` | `World` class — `Map<string, Chunk>` keyed by `"cx,cz"`. Block get/set with negative coord handling, step-based raycast (step=0.05), BFS water spread (MAX_LEVEL=7), sand gravity (single-block), dynamic 5×5 chunk loading |
 | `src/meshing.js` | `greedyMesh()` — standard greedy algorithm, returns `{ solid, transparent }` BufferGeometry. `TRANSPARENT_BLOCKS = Set([4])` (water only). Solid/transparent rendered as separate meshes |
-| `src/player.js` | `Player` class — AABB (0.6×1.8×0.6), gravity=-20, jumpSpeed=8, speed=6. 8-iteration collision resolution. Water movement uses acceleration/drag with neutral buoyancy, `Space` ascend + `Ctrl` descend, and a surface jump assist. Void respawn at y<-20 → (0,80,10). Eye height offset=1.6 |
+| `src/player.js` | `Player` class — AABB (0.6×1.8×0.6), gravity=-20, jumpSpeed=8, speed=6. 8-iteration collision resolution. Water physics uses state machine (`surfaceJumping`/`surfaceJumpTimer`) with separated `updateWaterPhysics()`/`updateLandPhysics()`. `isInWater()` checks 3 points (feet/mid/head). `isNearWaterSurface()` multi-point scan. Surface jump: speed=7, 0.15s protection period with reduced drag. `Space` ascend + `Ctrl` descend in water. Void respawn at y<-20 → (0,80,10). Eye height offset=1.6 |
 | `src/items.js` | `ITEMS` array indexed by numeric ID. `ITEM_MAP` for O(1) lookup. Exports: `getItem`, `isTool`, `isBlock`, `getMineTime`, `getDropId`. BARE_HAND_SPEED=0.3 |
 | `src/inventory.js` | `Inventory` — 9 slots × 64 stack. Default loadout: pickaxe, axe, shovel, grass×64, cobblestone×64, planks×64. `onChange` callback for UI sync |
 | `src/texture.js` | Procedural canvas atlas: 8 cols × 3 rows, 16px tiles (128×48 total). `getBlockUV(blockId, faceAxis, dir)` → UV coords. NearestFilter for pixel art look |
@@ -88,12 +88,12 @@ Adding a new block/tool requires changes in:
 | Fog range | 100–200 | `main.js` init |
 | Max dt cap | 0.05s | `main.js` animate |
 | Water opacity | 0.6 | `chunk.js` getSharedMaterials |
-| Water accel | 18 | `player.js` |
-| Water drag | 6 | `player.js` |
-| Water vertical accel | 14 | `player.js` |
+| Water accel | 15 | `player.js` |
+| Water drag | 4 | `player.js` |
+| Water vertical accel | 12 | `player.js` |
 | Water max speed | 4 | `player.js` |
-| Water surface jump | 6.5 | `player.js` |
-| Water surface snap | 0.2 | `player.js` |
+| Water surface jump | 7 | `player.js` |
+| Water surface snap | 0.5 | `player.js` |
 | Water spread MAX_LEVEL | 7 | `world.js` spreadWater |
 | Terrain height range | ~30–75 | `chunk.js` getHeight |
 | Tree threshold | height ≥ 45, ~2% chance | `chunk.js` generateTrees |
@@ -115,5 +115,5 @@ Adding a new block/tool requires changes in:
 - Textures are procedural canvas, not loaded files
 - Shared materials are lazy-init module-level singletons in `chunk.js`
 - Seed is `Math.random()` per session — terrain not reproducible
-- UI text in `index.html` is Chinese (controls hint)
+- UI text in `index.html` is Chinese (lang="zh-CN", help overlay)
 - Hotbar selection supports number keys and wraparound left/right arrow cycling
