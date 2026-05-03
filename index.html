@@ -1,25 +1,85 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Game</title>
-  <script type="module" crossorigin src="/game/assets/index-D2V_3aaA.js"></script>
-  <link rel="stylesheet" crossorigin href="/game/assets/index-De1zXlRI.css">
+  <script type="module" crossorigin src="/game/assets/index-DcA4YtuE.js"></script>
+  <link rel="stylesheet" crossorigin href="/game/assets/index-CYccb_oi.css">
 </head>
 <body>
   <div class="crosshair"></div>
   <div class="hotbar">
-    <div class="hotbar-slot active"><div class="item-icon"></div><div class="item-count"></div></div>
-    <div class="hotbar-slot"><div class="item-icon"></div><div class="item-count"></div></div>
-    <div class="hotbar-slot"><div class="item-icon"></div><div class="item-count"></div></div>
-    <div class="hotbar-slot"><div class="item-icon"></div><div class="item-count"></div></div>
-    <div class="hotbar-slot"><div class="item-icon"></div><div class="item-count"></div></div>
-    <div class="hotbar-slot"><div class="item-icon"></div><div class="item-count"></div></div>
-    <div class="hotbar-slot"><div class="item-icon"></div><div class="item-count"></div></div>
-    <div class="hotbar-slot"><div class="item-icon"></div><div class="item-count"></div></div>
-    <div class="hotbar-slot"><div class="item-icon"></div><div class="item-count"></div></div>
+    <div class="hotbar-slot active"><div class="item-icon"></div><div class="item-count"></div><div class="slot-number">1</div></div>
+    <div class="hotbar-slot"><div class="item-icon"></div><div class="item-count"></div><div class="slot-number">2</div></div>
+    <div class="hotbar-slot"><div class="item-icon"></div><div class="item-count"></div><div class="slot-number">3</div></div>
+    <div class="hotbar-slot"><div class="item-icon"></div><div class="item-count"></div><div class="slot-number">4</div></div>
+    <div class="hotbar-slot"><div class="item-icon"></div><div class="item-count"></div><div class="slot-number">5</div></div>
+    <div class="hotbar-slot"><div class="item-icon"></div><div class="item-count"></div><div class="slot-number">6</div></div>
+    <div class="hotbar-slot"><div class="item-icon"></div><div class="item-count"></div><div class="slot-number">7</div></div>
+    <div class="hotbar-slot"><div class="item-icon"></div><div class="item-count"></div><div class="slot-number">8</div></div>
+    <div class="hotbar-slot"><div class="item-icon"></div><div class="item-count"></div><div class="slot-number">9</div></div>
   </div>
-  <div class="controls">左键破坏 · 右键放置 · WASD移动 · 空格跳跃 · ESC释放鼠标</div>
+  <div class="controls">按 H 打开帮助</div>
+  <div class="help-overlay" id="helpOverlay">
+    <div class="help-panel">
+      <h2>操作帮助</h2>
+      <div class="help-section">
+        <h3>移动</h3>
+        <div class="help-item">
+          <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span>
+          <span class="help-desc">移动</span>
+        </div>
+        <div class="help-item">
+          <span class="key">Space</span>
+          <span class="help-desc">跳跃 / 水中上浮 / 水面跳出</span>
+        </div>
+        <div class="help-item">
+          <span class="key">Ctrl</span>
+          <span class="help-desc">水中下潜</span>
+        </div>
+      </div>
+      <div class="help-section">
+        <h3>交互</h3>
+        <div class="help-item">
+          <span class="key">左键</span>
+          <span class="help-desc">破坏方块（按住）</span>
+        </div>
+        <div class="help-item">
+          <span class="key">右键</span>
+          <span class="help-desc">放置方块</span>
+        </div>
+      </div>
+      <div class="help-section">
+        <h3>火把</h3>
+        <div class="help-item">
+          <span class="key">Shift</span><span class="key">左键</span>
+          <span class="help-desc">拾取火把</span>
+        </div>
+      </div>
+      <div class="help-section">
+        <h3>物品栏</h3>
+        <div class="help-item">
+          <span class="key">1</span>-<span class="key">9</span>
+          <span class="help-desc">选择物品</span>
+        </div>
+        <div class="help-item">
+          <span class="key">←</span><span class="key">→</span>
+          <span class="help-desc">切换物品</span>
+        </div>
+      </div>
+      <div class="help-section">
+        <h3>其他</h3>
+        <div class="help-item">
+          <span class="key">ESC</span>
+          <span class="help-desc">释放鼠标</span>
+        </div>
+        <div class="help-item">
+          <span class="key">H</span>
+          <span class="help-desc">打开/关闭帮助</span>
+        </div>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
