@@ -18,7 +18,7 @@ index.html          — Entry HTML (UI shell, help overlay, links src/main.js)
 style.css           — Full-bleed layout, crosshair, hotbar, help overlay styling
 vite.config.js      — Minimal Vite config (root='.', publicDir='public')
 src/
-  main.js           — Game class: loop, input, scene, mining/placement, hotbar UI
+  main.js           — Game class: loop, input, scene, mining/placement, hotbar UI, torch lights
   chunk.js          — Chunk class: terrain generation, mesh building
   world.js          — World class: chunk registry, block ops, raycast, water/sand
   meshing.js        — Greedy meshing: voxel data → BufferGeometry
@@ -27,6 +27,7 @@ src/
   inventory.js      — Inventory class: 9 slots, 64-stack, hotbar management
   texture.js        — Procedural canvas texture atlas
   particles.js      — Mining particle effects
+  daynight.js       — DayNightCycle + AmbientParticleSystem (stars, fireflies)
 ```
 
 ## Architecture
@@ -35,15 +36,16 @@ Single-page game. `index.html` → `src/main.js` (`Game` class) drives everythin
 
 | File | Responsibility |
 |---|---|
-| `src/main.js` | Game loop (`animate`), pointer lock input, Three.js scene/camera/renderer setup, mining state machine, block placement, hotbar UI rendering, number-key selection, ArrowLeft/ArrowRight hotbar cycling, dynamic chunk loading trigger, help overlay toggle (`H` key) |
+| `src/main.js` | Game loop (`animate`), pointer lock input, Three.js scene/camera/renderer setup, mining state machine, block placement, hotbar UI rendering, number-key selection, ArrowLeft/ArrowRight hotbar cycling, dynamic chunk loading trigger, help overlay toggle (`H` key), torch light management (camera + placed), Shift+left-click torch pickup |
 | `src/chunk.js` | `Chunk` class — 16×16 columns, 80 blocks tall. Multi-octave simplex noise terrain (3 frequencies: 0.01/0.05/0.005), biome split (height<40 → desert/sand, ≥40 → grass/dirt/stone), tree generation (2% chance, height≥45 only, chunk-local) |
 | `src/world.js` | `World` class — `Map<string, Chunk>` keyed by `"cx,cz"`. Block get/set with negative coord handling, step-based raycast (step=0.05), BFS water spread (MAX_LEVEL=7), sand gravity (single-block), dynamic 5×5 chunk loading |
-| `src/meshing.js` | `greedyMesh()` — standard greedy algorithm, returns `{ solid, transparent }` BufferGeometry. `TRANSPARENT_BLOCKS = Set([4])` (water only). Solid/transparent rendered as separate meshes |
-| `src/player.js` | `Player` class — AABB (0.6×1.8×0.6), gravity=-20, jumpSpeed=8, speed=6. 8-iteration collision resolution. Water physics uses state machine (`surfaceJumping`/`surfaceJumpTimer`) with separated `updateWaterPhysics()`/`updateLandPhysics()`. `isInWater()` checks 3 points (feet/mid/head). `isNearWaterSurface()` multi-point scan. Surface jump: speed=7, 0.15s protection period with reduced drag. `Space` ascend + `Ctrl` descend in water. Void respawn at y<-20 → (0,80,10). Eye height offset=1.6 |
+| `src/meshing.js` | `greedyMesh()` — standard greedy algorithm, returns `{ solid, transparent }` BufferGeometry. `TRANSPARENT_BLOCKS = Set([4])` (water only). `SKIP_BLOCKS = Set([13])` (torch — custom mesh). Solid/transparent rendered as separate meshes |
+| `src/player.js` | `Player` class — AABB (0.6×1.8×0.6), gravity=-20, jumpSpeed=8, speed=6. 8-iteration collision resolution. Water physics uses state machine (`surfaceJumping`/`surfaceJumpTimer`) with separated `updateWaterPhysics()`/`updateLandPhysics()`. `isInWater()` checks 3 points (feet/mid/head). `isNearWaterSurface()` multi-point scan. Surface jump: speed=7, 0.15s protection period with reduced drag. `Space` ascend + `Ctrl` descend in water. Void respawn at y<-20 → (0,80,10). Eye height offset=1.6. `SOLID_BLOCKS` includes torch (13) |
 | `src/items.js` | `ITEMS` array indexed by numeric ID. `ITEM_MAP` for O(1) lookup. Exports: `getItem`, `isTool`, `isBlock`, `getMineTime`, `getDropId`. BARE_HAND_SPEED=0.3 |
-| `src/inventory.js` | `Inventory` — 9 slots × 64 stack. Default loadout: pickaxe, axe, shovel, grass×64, cobblestone×64, planks×64. `onChange` callback for UI sync |
-| `src/texture.js` | Procedural canvas atlas: 8 cols × 3 rows, 16px tiles (128×48 total). `getBlockUV(blockId, faceAxis, dir)` → UV coords. NearestFilter for pixel art look |
+| `src/inventory.js` | `Inventory` — 9 slots × 64 stack. Default loadout: pickaxe, axe, shovel, grass×64, cobblestone×64, planks×64, torch×64. `onChange` callback for UI sync |
+| `src/texture.js` | Procedural canvas atlas: 9 cols × 3 rows, 16px tiles (144×48 total). `getBlockUV(blockId, faceAxis, dir)` → UV coords. NearestFilter for pixel art look |
 | `src/particles.js` | `ParticleSystem` — tiny 0.08 cubes, 0.6s lifetime, gravity=-10. `emit()` for bursts, `emitContinuous()` for mining (30% chance/frame) |
+| `src/daynight.js` | `DayNightCycle` — 5-minute cycle, 8-node gradient table, sun/moon orbiting at radius 150, sky/fog/light color interpolation. `AmbientParticleSystem` — 200 star Points (night-only), 30 firefly cubes (night-only, spawn near player, 3-5s lifetime) |
 
 ## Block/Tool ID Registry
 
@@ -62,6 +64,7 @@ Single-page game. `index.html` → `src/main.js` (`Game` class) drives everythin
 | 10 | Pickaxe | tool | — | — | speed=4.0, effective: [3,8] |
 | 11 | Axe | tool | — | — | speed=3.0, effective: [6,9] |
 | 12 | Shovel | tool | — | — | speed=3.0, effective: [1,2,5] |
+| 13 | Torch | block | 0.3 | 13 (self) | — |
 
 Adding a new block/tool requires changes in:
 1. `items.js` — add to `ITEMS` array
@@ -99,7 +102,13 @@ Adding a new block/tool requires changes in:
 | Tree threshold | height ≥ 45, ~2% chance | `chunk.js` generateTrees |
 | Tree trunk height | 4 | `chunk.js` placeTile |
 | Tile size | 16px | `texture.js` TILE |
-| Atlas | 8 cols × 3 rows (128×48px) | `texture.js` |
+| Atlas | 9 cols × 3 rows (144×48px) | `texture.js` |
+| Day/night cycle | 300s (5 min) | `daynight.js` CYCLE_DURATION |
+| Sun/moon orbit radius | 150 | `daynight.js` |
+| Star count | 200 | `daynight.js` AmbientParticleSystem |
+| Firefly count | 30 | `daynight.js` AmbientParticleSystem |
+| Torch light range | 20 | `main.js` PointLight |
+| Torch light color | 0xFFAA44 | `main.js` |
 | Max stack | 64 | `inventory.js` |
 | Hotbar slots | 9 | `inventory.js` |
 | Particle lifetime | 0.6s | `particles.js` |
