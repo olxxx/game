@@ -35,7 +35,7 @@ Single-page game. `index.html` → `src/main.js` (`Game` class) drives everythin
 
 | File | Responsibility |
 |---|---|
-| `src/main.js` | Game loop (`animate`), pointer lock input, Three.js scene/camera/renderer setup, mining state machine, block placement, hotbar UI rendering, dynamic chunk loading trigger |
+| `src/main.js` | Game loop (`animate`), pointer lock input, Three.js scene/camera/renderer setup, mining state machine, block placement, hotbar UI rendering, number-key selection, ArrowLeft/ArrowRight hotbar cycling, dynamic chunk loading trigger |
 | `src/chunk.js` | `Chunk` class — 16×16 columns, 80 blocks tall. Multi-octave simplex noise terrain (3 frequencies: 0.01/0.05/0.005), biome split (height<40 → desert/sand, ≥40 → grass/dirt/stone), tree generation (2% chance, height≥45 only, chunk-local) |
 | `src/world.js` | `World` class — `Map<string, Chunk>` keyed by `"cx,cz"`. Block get/set with negative coord handling, step-based raycast (step=0.05), BFS water spread (MAX_LEVEL=7), sand gravity (single-block), dynamic 5×5 chunk loading |
 | `src/meshing.js` | `greedyMesh()` — standard greedy algorithm, returns `{ solid, transparent }` BufferGeometry. `TRANSPARENT_BLOCKS = Set([4])` (water only). Solid/transparent rendered as separate meshes |
@@ -110,3 +110,4 @@ Adding a new block/tool requires changes in:
 - Shared materials are lazy-init module-level singletons in `chunk.js`
 - Seed is `Math.random()` per session — terrain not reproducible
 - UI text in `index.html` is Chinese (controls hint)
+- Hotbar selection supports number keys and wraparound left/right arrow cycling

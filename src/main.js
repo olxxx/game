@@ -139,6 +139,19 @@ class Game {
 
     document.addEventListener('keydown', (e) => {
       this.keys[e.code] = true;
+
+      if (e.code === 'ArrowLeft') {
+        this.inventory.cycle(-1);
+        e.preventDefault();
+        return;
+      }
+
+      if (e.code === 'ArrowRight') {
+        this.inventory.cycle(1);
+        e.preventDefault();
+        return;
+      }
+
       if (e.code.startsWith('Digit')) {
         const num = parseInt(e.code.replace('Digit', ''));
         if (num >= 1 && num <= 9) {

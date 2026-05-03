@@ -27,6 +27,11 @@ export class Inventory {
     this._notify();
   }
 
+  cycle(offset) {
+    const next = (this.selectedIndex + offset + SLOT_COUNT) % SLOT_COUNT;
+    this.select(next);
+  }
+
   selectByNumber(n) {
     this.select(n - 1);
   }
