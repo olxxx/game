@@ -13,25 +13,111 @@ export class Player {
     this.jumpSpeed = 8;
     this.speed = 6;
     this.onGround = false;
+
+    this.waterAccel = 18;
+    this.waterMaxSpeed = 4;
+    this.waterDrag = 6;
+    this.waterVerticalAccel = 14;
+    this.waterMaxVerticalSpeed = 3;
+    this.waterVerticalDrag = 6;
+    this.waterSurfaceJumpSpeed = 6.5;
+    this.surfaceSnap = 0.2;
   }
 
-  update(dt, world) {
+  isNearWaterSurface(world) {
+    const footY = this.position.y + 0.1;
+    const headY = this.position.y + this.height;
+
+    const footBlock = world.getBlock(
+      Math.floor(this.position.x),
+      Math.floor(footY),
+      Math.floor(this.position.z)
+    );
+
+    if (footBlock !== 4) return false;
+
+    const headBlock = world.getBlock(
+      Math.floor(this.position.x),
+      Math.floor(headY),
+      Math.floor(this.position.z)
+    );
+
+    if (headBlock !== 0) return false;
+
+    const waterSurfaceY = Math.floor(footY) + 1;
+    return (waterSurfaceY - footY) <= this.surfaceSnap;
+  }
+
+  update(dt, world, input = {}) {
     const inWater = this.isInWater(world);
     this.inWater = inWater;
 
     if (inWater) {
-      this.velocity.y *= 0.95;
+      let dirX = input.moveDir?.x || 0;
+      let dirZ = input.moveDir?.z || 0;
+      const lenSq = dirX * dirX + dirZ * dirZ;
+      if (lenSq > 1e-6) {
+        const invLen = 1 / Math.sqrt(lenSq);
+        dirX *= invLen;
+        dirZ *= invLen;
+        this.velocity.x += dirX * this.waterAccel * dt;
+        this.velocity.z += dirZ * this.waterAccel * dt;
+      }
+
+      const nearSurface = this.isNearWaterSurface(world);
+      const shouldSurfaceJump = !!input.spaceJustPressed && !!input.spacePressed && nearSurface;
+
+      if (shouldSurfaceJump) {
+        this.velocity.y = Math.max(this.velocity.y, this.waterSurfaceJumpSpeed);
+      }
+
+      if (!shouldSurfaceJump) {
+        const verticalInput = (input.spacePressed ? 1 : 0) + (input.ctrlPressed ? -1 : 0);
+        if (verticalInput !== 0) {
+          this.velocity.y += verticalInput * this.waterVerticalAccel * dt;
+        }
+      }
+
+      this.velocity.x -= this.velocity.x * this.waterDrag * dt;
+      this.velocity.z -= this.velocity.z * this.waterDrag * dt;
+      this.velocity.y -= this.velocity.y * this.waterVerticalDrag * dt;
+
+      const horizSpeed = Math.hypot(this.velocity.x, this.velocity.z);
+      if (horizSpeed > this.waterMaxSpeed) {
+        const scale = this.waterMaxSpeed / horizSpeed;
+        this.velocity.x *= scale;
+        this.velocity.z *= scale;
+      }
+
+      if (this.velocity.y > this.waterMaxVerticalSpeed) this.velocity.y = this.waterMaxVerticalSpeed;
+      if (this.velocity.y < -this.waterMaxVerticalSpeed) this.velocity.y = -this.waterMaxVerticalSpeed;
+    } else {
+      let dirX = input.moveDir?.x || 0;
+      let dirZ = input.moveDir?.z || 0;
+      const lenSq = dirX * dirX + dirZ * dirZ;
+      if (lenSq > 1e-6) {
+        const invLen = 1 / Math.sqrt(lenSq);
+        dirX *= invLen;
+        dirZ *= invLen;
+        this.velocity.x = dirX * this.speed;
+        this.velocity.z = dirZ * this.speed;
+      } else {
+        this.velocity.x = 0;
+        this.velocity.z = 0;
+      }
+
+      if (input.spacePressed) {
+        this.jump();
+      }
+
+      if (!this.onGround) {
+        this.velocity.y += this.gravity * dt;
+      }
     }
 
-    if (!this.onGround) {
-      const gravity = inWater ? this.gravity * 0.2 : this.gravity;
-      this.velocity.y += gravity * dt;
-    }
-
-    const speedMult = inWater ? 0.5 : 1.0;
-    this.position.x += this.velocity.x * dt * speedMult;
+    this.position.x += this.velocity.x * dt;
     this.position.y += this.velocity.y * dt;
-    this.position.z += this.velocity.z * dt * speedMult;
+    this.position.z += this.velocity.z * dt;
 
     for (let iter = 0; iter < 8; iter++) {
       const collision = this.findCollision(world);
@@ -146,8 +232,6 @@ export class Player {
     if (this.onGround) {
       this.velocity.y = this.jumpSpeed;
       this.onGround = false;
-    } else if (this.inWater) {
-      this.velocity.y = this.jumpSpeed * 0.6;
     }
   }
 

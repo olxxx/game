@@ -9,6 +9,7 @@ import { isTool, isBlock, getMineTime } from './items.js';
 class Game {
   constructor() {
     this.keys = {};
+    this.prevSpacePressed = false;
     this.yaw = 0;
     this.pitch = 0;
     this.isLocked = false;
@@ -198,16 +199,18 @@ class Game {
 
     if (moveDir.lengthSq() > 0) {
       moveDir.normalize();
-      this.player.velocity.x = moveDir.x * this.player.speed;
-      this.player.velocity.z = moveDir.z * this.player.speed;
-    } else {
-      this.player.velocity.x = 0;
-      this.player.velocity.z = 0;
     }
 
-    if (this.keys['Space']) {
-      this.player.jump();
-    }
+    const spacePressed = !!this.keys['Space'];
+    const spaceJustPressed = spacePressed && !this.prevSpacePressed;
+    this.prevSpacePressed = spacePressed;
+
+    return {
+      moveDir,
+      spacePressed,
+      spaceJustPressed,
+      ctrlPressed: !!this.keys['ControlLeft'] || !!this.keys['ControlRight'],
+    };
   }
 
   updateHighlight() {
@@ -241,9 +244,9 @@ class Game {
     const dt = Math.min((now - this.lastTime) / 1000, 0.05);
     this.lastTime = now;
 
-    this.updatePlayer();
+    const input = this.updatePlayer();
 
-    const eyePos = this.player.update(dt, this.world);
+    const eyePos = this.player.update(dt, this.world, input);
     this.camera.position.copy(eyePos);
 
     const pcx = Math.floor(this.player.position.x / 16);
