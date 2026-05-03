@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { getBlockUV } from './texture.js';
 
 const TRANSPARENT_BLOCKS = new Set([4]);
+const SKIP_BLOCKS = new Set([13]);
 
 export function greedyMesh(blocks, chunkSize, worldHeight, getNeighborBlock) {
   const solidPositions = [];
@@ -102,11 +103,11 @@ export function greedyMesh(blocks, chunkSize, worldHeight, getNeighborBlock) {
   }
 
   function shouldRenderFace(block, neighbor) {
-    if (block === 0) return false;
+    if (block === 0 || SKIP_BLOCKS.has(block)) return false;
     if (TRANSPARENT_BLOCKS.has(block)) {
       return neighbor === 0 || (neighbor !== block && !TRANSPARENT_BLOCKS.has(neighbor));
     }
-    return neighbor === 0 || TRANSPARENT_BLOCKS.has(neighbor);
+    return neighbor === 0 || TRANSPARENT_BLOCKS.has(neighbor) || SKIP_BLOCKS.has(neighbor);
   }
 
   for (let face = 0; face < 6; face++) {

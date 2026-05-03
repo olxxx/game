@@ -5,6 +5,7 @@ import { World } from './world.js';
 import { Inventory } from './inventory.js';
 import { ParticleSystem } from './particles.js';
 import { isTool, isBlock, getMineTime } from './items.js';
+import { DayNightCycle, AmbientParticleSystem } from './daynight.js';
 
 class Game {
   constructor() {
@@ -37,6 +38,9 @@ class Game {
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
     this.scene.add(ambientLight);
 
+    this.directionalLight = directionalLight;
+    this.ambientLight = ambientLight;
+
     const chunks = [];
     for (let x = -3; x <= 3; x++) {
       for (let z = -3; z <= 3; z++) {
@@ -48,11 +52,26 @@ class Game {
 
     this.world = new World(chunks, this.scene);
 
+    this.daynight = new DayNightCycle(this.scene);
+    this.ambientParticles = new AmbientParticleSystem(this.scene, this.daynight);
+
+    this.torchLights = new Map();
+    this.torchMeshes = new Map();
+    this.torchStickGeo = new THREE.BoxGeometry(0.15, 0.7, 0.15);
+    this.torchStickMat = new THREE.MeshStandardMaterial({ color: 0x8B5A2B });
+    this.torchFlameGeo = new THREE.BoxGeometry(0.25, 0.25, 0.25);
+    this.torchFlameMat = new THREE.MeshBasicMaterial({ color: 0xFFAA22 });
+    this.cameraTorchLight = new THREE.PointLight(0xFFAA44, 1.5, 20);
+    this.cameraTorchLight.visible = false;
+    this.scene.add(this.cameraTorchLight);
+
     for (const chunk of chunks) {
       const { solidMesh, waterMesh } = chunk.buildMesh(this.world.chunkMap);
       this.scene.add(solidMesh);
       this.scene.add(waterMesh);
     }
+
+    this.scanForTorches();
 
     this.lastPlayerChunkX = Math.floor(0 / 16);
     this.lastPlayerChunkZ = Math.floor(10 / 16);
@@ -107,6 +126,18 @@ class Game {
 
       if (e.button === 0) {
         if (!hit) return;
+        if (e.shiftKey) {
+          const bp = hit.blockPos;
+          const blockId = this.world.getBlock(bp.x, bp.y, bp.z);
+          if (blockId === 13) {
+            this.removeTorchLight(bp.x, bp.y, bp.z);
+            const result = this.world.setBlock(bp.x, bp.y, bp.z, 0);
+            if (result.success) {
+              this.inventory.add(13, 1);
+            }
+          }
+          return;
+        }
         this.startMining(hit);
       } else if (e.button === 2) {
         const selectedItemId = this.inventory.getSelectedItemId();
@@ -116,6 +147,9 @@ class Game {
             const result = this.world.setBlock(waterHit.placePos.x, waterHit.placePos.y, waterHit.placePos.z, selectedItemId);
             if (result.success) {
               this.inventory.removeSelected();
+              if (selectedItemId === 13) {
+                this.addTorchLight(waterHit.placePos.x, waterHit.placePos.y, waterHit.placePos.z);
+              }
             }
           } else if (hit) {
             const p = hit.placePos;
@@ -123,6 +157,9 @@ class Game {
               const result = this.world.setBlock(p.x, p.y, p.z, selectedItemId);
               if (result.success) {
                 this.inventory.removeSelected();
+                if (selectedItemId === 13) {
+                  this.addTorchLight(p.x, p.y, p.z);
+                }
               }
             }
           }
@@ -271,6 +308,7 @@ class Game {
         this.player.position.x,
         this.player.position.z
       );
+      this.scanForTorches();
       this.lastPlayerChunkX = pcx;
       this.lastPlayerChunkZ = pcz;
     }
@@ -282,6 +320,23 @@ class Game {
     this.updateHighlight();
 
     this.particles.update(dt);
+
+    this.daynight.update(dt);
+
+    const skyColor = this.daynight.getSkyColor();
+    this.scene.background.setHex(skyColor);
+    this.scene.fog.color.setHex(this.daynight.getFogColor());
+    this.scene.fog.near = this.daynight.getFogNear();
+    this.scene.fog.far = this.daynight.getFogFar();
+
+    this.directionalLight.intensity = this.daynight.getSunIntensity();
+    this.directionalLight.color.setHex(this.daynight.getSunColor());
+    this.ambientLight.intensity = this.daynight.getAmbientIntensity();
+    this.ambientLight.color.setHex(this.daynight.getAmbientColor());
+
+    this.ambientParticles.update(dt, this.player.position);
+
+    this.updateCameraTorch();
 
     this.renderer.render(this.scene, this.camera);
   }
@@ -308,6 +363,67 @@ class Game {
     this.mining.progress = 0;
   }
 
+  addTorchLight(wx, wy, wz) {
+    const key = `${wx},${wy},${wz}`;
+    if (this.torchLights.has(key)) return;
+    const light = new THREE.PointLight(0xFFAA44, 1.5, 20);
+    light.position.set(wx + 0.5, wy + 0.8, wz + 0.5);
+    this.scene.add(light);
+    this.torchLights.set(key, light);
+
+    const group = new THREE.Group();
+    const stick = new THREE.Mesh(this.torchStickGeo, this.torchStickMat);
+    stick.position.set(0, 0.35, 0);
+    group.add(stick);
+    const flame = new THREE.Mesh(this.torchFlameGeo, this.torchFlameMat);
+    flame.position.set(0, 0.8, 0);
+    group.add(flame);
+    group.position.set(wx + 0.5, wy, wz + 0.5);
+    this.scene.add(group);
+    this.torchMeshes.set(key, group);
+  }
+
+  removeTorchLight(wx, wy, wz) {
+    const key = `${wx},${wy},${wz}`;
+    const light = this.torchLights.get(key);
+    if (light) {
+      this.scene.remove(light);
+      light.dispose();
+      this.torchLights.delete(key);
+    }
+    const mesh = this.torchMeshes.get(key);
+    if (mesh) {
+      this.scene.remove(mesh);
+      this.torchMeshes.delete(key);
+    }
+  }
+
+  updateCameraTorch() {
+    const selectedId = this.inventory.getSelectedItemId();
+    if (selectedId === 13) {
+      this.cameraTorchLight.position.copy(this.camera.position);
+      this.cameraTorchLight.visible = true;
+    } else {
+      this.cameraTorchLight.visible = false;
+    }
+  }
+
+  scanForTorches() {
+    for (const [, chunk] of this.world.chunkMap) {
+      for (let y = 0; y < chunk.worldHeight; y++) {
+        for (let z = 0; z < chunk.chunkSize; z++) {
+          for (let x = 0; x < chunk.chunkSize; x++) {
+            if (chunk.blocks[chunk.getIndex(x, y, z)] === 13) {
+              const wx = chunk.chunkX * chunk.chunkSize + x;
+              const wz = chunk.chunkZ * chunk.chunkSize + z;
+              this.addTorchLight(wx, y, wz);
+            }
+          }
+        }
+      }
+    }
+  }
+
   getBlockColor(blockId) {
     const colors = {
       1: 0x5a8c3c,
@@ -318,6 +434,7 @@ class Game {
       7: 0x3c7a28,
       8: 0x828282,
       9: 0xb48c5a,
+      13: 0xD4A040,
     };
     return colors[blockId] || 0x808080;
   }
@@ -350,6 +467,7 @@ class Game {
 
     if (this.mining.progress >= this.mining.mineTime) {
       const result = this.world.setBlock(bp.x, bp.y, bp.z, 0);
+      this.removeTorchLight(bp.x, bp.y, bp.z);
       if (result.success && result.dropId > 0) {
         this.inventory.add(result.dropId, 1);
       }
@@ -399,25 +517,48 @@ class Game {
     return c;
   }
 
+  drawTorch() {
+    const c = document.createElement('canvas');
+    c.width = 32; c.height = 32;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#00000000';
+    ctx.fillRect(0, 0, 32, 32);
+    ctx.fillStyle = '#8B5A2B';
+    ctx.fillRect(14, 10, 4, 18);
+    ctx.fillStyle = '#FFA500';
+    ctx.fillRect(12, 4, 8, 8);
+    ctx.fillStyle = '#FFCC00';
+    ctx.fillRect(13, 5, 6, 5);
+    ctx.fillStyle = '#FF6600';
+    ctx.fillRect(14, 2, 4, 3);
+    return c;
+  }
+
   drawPickaxe() {
     const c = document.createElement('canvas');
     c.width = 32; c.height = 32;
     const ctx = c.getContext('2d');
-    const brown = '#8B4513';
-    const silver = '#D0D0D0';
-    const grey = '#A0A0A0';
-    ctx.fillStyle = brown;
-    ctx.fillRect(4, 26, 4, 4);
-    ctx.fillRect(8, 22, 4, 4);
-    ctx.fillRect(12, 18, 4, 4);
-    ctx.fillRect(16, 14, 4, 4);
-    ctx.fillStyle = silver;
-    ctx.fillRect(18, 8, 12, 4);
-    ctx.fillRect(18, 12, 12, 4);
-    ctx.fillStyle = grey;
-    ctx.fillRect(18, 6, 12, 2);
-    ctx.fillRect(18, 14, 12, 2);
-    ctx.fillRect(28, 6, 2, 10);
+    ctx.fillStyle = '#7B4B2A';
+    ctx.fillRect(14, 16, 4, 14);
+    ctx.fillStyle = '#9B6B3A';
+    ctx.fillRect(15, 17, 2, 12);
+    ctx.fillStyle = '#C8C8C8';
+    ctx.fillRect(8, 7, 16, 3);
+    ctx.fillStyle = '#E0E0E0';
+    ctx.fillRect(9, 7, 14, 2);
+    ctx.fillStyle = '#A0A0A0';
+    ctx.fillRect(3, 5, 6, 3);
+    ctx.fillRect(23, 5, 6, 3);
+    ctx.fillStyle = '#D0D0D0';
+    ctx.fillRect(4, 5, 4, 2);
+    ctx.fillRect(24, 5, 4, 2);
+    ctx.fillStyle = '#B0B0B0';
+    ctx.fillRect(3, 6, 2, 3);
+    ctx.fillRect(27, 6, 2, 3);
+    ctx.fillRect(5, 8, 3, 2);
+    ctx.fillRect(24, 8, 3, 2);
+    ctx.fillRect(3, 4, 1, 2);
+    ctx.fillRect(28, 4, 1, 2);
     return c;
   }
 
@@ -425,21 +566,25 @@ class Game {
     const c = document.createElement('canvas');
     c.width = 32; c.height = 32;
     const ctx = c.getContext('2d');
-    const brown = '#8B4513';
-    const silver = '#B0B0B0';
-    const grey = '#808080';
-    ctx.fillStyle = brown;
-    ctx.fillRect(6, 24, 4, 6);
-    ctx.fillRect(6, 18, 4, 6);
-    ctx.fillRect(6, 12, 4, 6);
-    ctx.fillRect(6, 6, 4, 6);
-    ctx.fillStyle = silver;
-    ctx.fillRect(10, 4, 8, 8);
-    ctx.fillRect(18, 2, 8, 8);
-    ctx.fillStyle = grey;
-    ctx.fillRect(10, 2, 16, 2);
-    ctx.fillRect(10, 12, 16, 2);
-    ctx.fillRect(26, 2, 2, 12);
+    ctx.fillStyle = '#7B4B2A';
+    ctx.fillRect(13, 14, 4, 16);
+    ctx.fillStyle = '#9B6B3A';
+    ctx.fillRect(14, 15, 2, 14);
+    ctx.fillStyle = '#B0B0B0';
+    ctx.fillRect(6, 2, 12, 6);
+    ctx.fillRect(4, 4, 4, 6);
+    ctx.fillRect(3, 6, 3, 4);
+    ctx.fillRect(18, 3, 4, 4);
+    ctx.fillRect(20, 4, 3, 3);
+    ctx.fillStyle = '#D0D0D0';
+    ctx.fillRect(7, 2, 10, 3);
+    ctx.fillRect(5, 4, 4, 4);
+    ctx.fillRect(18, 3, 3, 3);
+    ctx.fillStyle = '#909090';
+    ctx.fillRect(6, 7, 12, 2);
+    ctx.fillRect(4, 9, 4, 2);
+    ctx.fillRect(3, 9, 3, 2);
+    ctx.fillRect(20, 4, 3, 2);
     return c;
   }
 
@@ -447,20 +592,23 @@ class Game {
     const c = document.createElement('canvas');
     c.width = 32; c.height = 32;
     const ctx = c.getContext('2d');
-    const brown = '#8B4513';
-    const silver = '#D0D0D0';
-    const grey = '#A0A0A0';
-    ctx.fillStyle = brown;
-    ctx.fillRect(13, 24, 6, 6);
-    ctx.fillRect(13, 18, 6, 6);
-    ctx.fillRect(13, 14, 6, 4);
-    ctx.fillStyle = silver;
-    ctx.fillRect(8, 4, 16, 10);
-    ctx.fillStyle = grey;
-    ctx.fillRect(8, 2, 16, 2);
-    ctx.fillRect(8, 14, 16, 2);
-    ctx.fillRect(6, 4, 2, 10);
-    ctx.fillRect(24, 4, 2, 10);
+    ctx.fillStyle = '#7B4B2A';
+    ctx.fillRect(14, 16, 4, 14);
+    ctx.fillStyle = '#9B6B3A';
+    ctx.fillRect(15, 17, 2, 12);
+    ctx.fillStyle = '#C0C0C0';
+    ctx.fillRect(10, 2, 12, 8);
+    ctx.fillRect(11, 10, 10, 3);
+    ctx.fillRect(12, 13, 8, 2);
+    ctx.fillRect(13, 15, 6, 1);
+    ctx.fillStyle = '#E0E0E0';
+    ctx.fillRect(11, 2, 10, 4);
+    ctx.fillRect(12, 6, 8, 3);
+    ctx.fillStyle = '#A0A0A0';
+    ctx.fillRect(10, 10, 12, 3);
+    ctx.fillRect(12, 13, 8, 2);
+    ctx.fillRect(9, 2, 2, 8);
+    ctx.fillRect(21, 2, 2, 8);
     return c;
   }
 
@@ -486,6 +634,8 @@ class Game {
           let canvas;
           if (isTool(data.itemId)) {
             canvas = this.drawToolIcon(data.itemId);
+          } else if (data.itemId === 13) {
+            canvas = this.drawTorch();
           } else {
             canvas = this.drawBlockIcon(data.itemId);
           }
@@ -507,6 +657,7 @@ class Game {
       slot.classList.toggle('active', i === this.inventory.selectedIndex);
     });
   }
+
 }
 
 new Game();

@@ -15,7 +15,7 @@ export class Inventory {
     this.slots[3] = { itemId: 1, count: 64 };  // Grass
     this.slots[4] = { itemId: 8, count: 64 };  // Cobblestone
     this.slots[5] = { itemId: 9, count: 64 };  // Planks
-    this.slots[6] = { itemId: 0, count: 0 };
+    this.slots[6] = { itemId: 13, count: 64 }; // Torch
     this.slots[7] = { itemId: 0, count: 0 };
     this.slots[8] = { itemId: 0, count: 0 };
     this._notify();

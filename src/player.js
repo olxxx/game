@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-const SOLID_BLOCKS = new Set([1, 2, 3, 5, 6, 7, 8, 9]);
+const SOLID_BLOCKS = new Set([1, 2, 3, 5, 6, 7, 8, 9, 13]);
 
 export class Player {
   constructor(x, y, z) {

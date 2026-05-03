@@ -23,6 +23,7 @@ export const ITEMS = [
   { id: 10, name: 'Pickaxe', type: ITEM_TYPE.TOOL, toolType: TOOL_TYPE.PICKAXE, speed: 4.0, effective: [3, 8] },
   { id: 11, name: 'Axe', type: ITEM_TYPE.TOOL, toolType: TOOL_TYPE.AXE, speed: 3.0, effective: [6, 9] },
   { id: 12, name: 'Shovel', type: ITEM_TYPE.TOOL, toolType: TOOL_TYPE.SHOVEL, speed: 3.0, effective: [1, 2, 5] },
+  { id: 13, name: 'Torch', type: ITEM_TYPE.BLOCK, hardness: 0.3, drops: 13 },
 ];
 
 const ITEM_MAP = new Map(ITEMS.map(item => [item.id, item]));

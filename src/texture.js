@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 const TILE = 16;
-const COLS = 8;
+const COLS = 9;
 const ROWS = 3;
 
 export const FACE_TOP = 0;
@@ -123,6 +123,24 @@ export function createTextureAtlas() {
   drawTile(7, 1, 180, 140, 90, noisePlanks);
   drawTile(7, 2, 180, 140, 90, noisePlanks);
 
+  function noiseTorch(x, y, r, g, b) {
+    const cx = 8, cy = 8;
+    const dist = Math.abs(x - cx);
+    if (dist <= 1 && y >= 2 && y <= 14) {
+      const d = (Math.random() - 0.5) * 10;
+      return [clamp(139 + d), clamp(90 + d), clamp(43 + d)];
+    }
+    if (dist <= 2 && y <= 3) {
+      const d = (Math.random() - 0.5) * 20;
+      return [clamp(255 + d), clamp(160 + d), clamp(30 + d)];
+    }
+    return [0, 0, 0];
+  }
+
+  drawTile(8, 0, 0, 0, 0, noiseTorch);
+  drawTile(8, 1, 0, 0, 0, noiseTorch);
+  drawTile(8, 2, 0, 0, 0, noiseTorch);
+
   const texture = new THREE.CanvasTexture(canvas);
   texture.magFilter = THREE.NearestFilter;
   texture.minFilter = THREE.NearestFilter;
@@ -145,6 +163,7 @@ const BLOCK_FACES = {
   7: { top: [0, 1], side: [0, 1], bottom: [0, 2] },
   8: { top: [6, 0], side: [6, 1], bottom: [6, 2] },
   9: { top: [7, 0], side: [7, 1], bottom: [7, 2] },
+  13: { top: [8, 0], side: [8, 1], bottom: [8, 2] },
 };
 
 export function getBlockUV(blockType, faceAxis, dir) {
